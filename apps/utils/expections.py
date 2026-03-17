@@ -2,6 +2,7 @@ from rest_framework.views import exception_handler
 from rest_framework import status
 from django.utils import timezone
 
+# --- Custom exception handler ------------------------------------------------
 
 def custom_exception_handler(exc, context):
     """

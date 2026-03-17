@@ -3,6 +3,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
 
+# --- API response wrapper ------------------------------------------------
+
 class APIResponse:
     @staticmethod
     def success_response(
