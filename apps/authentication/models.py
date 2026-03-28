@@ -55,3 +55,29 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     def is_admin_user(self):
         return self.role == self.Role.ADMIN
 
+# --- OTP Verification Model -----------------------------------------------------------------------
+
+class OTPVerification(TimeStampedModel):
+    """
+    One row per OTP send attempt.
+    After successful verify(), `verification_token` is populated and
+    returned to the client to prove the phone was verified.
+    """
+    MAX_ATTEMPTS = 5
+    OTP_TTL_SECONDS = 5 * 60  
+
+    class Purpose(models.TextChoices):
+        LOGIN = "login", "Login"
+        REGISTRATION = "registration", "Registration"
+        PHONE_CHANGE = "phone_change", "Phone Change"
+
+    phone = models.CharField(max_length=15, db_index=True)
+    country_code = models.CharField(max_length=5, blank=True, default="+966")
+    otp_code = models.CharField(max_length=6)
+    purpose = models.CharField(max_length=20, choices=Purpose.choices, default=Purpose.REGISTRATION)
+    attempts = models.IntegerField(default=0)
+    is_used = models.BooleanField(default=False, db_index=True)
+    is_verified = models.BooleanField(default=False, db_index=True)
+    expires_at = models.DateTimeField()
+    verified_at = models.DateTimeField(blank=True, null=True)
+    verification_token = models.CharField(max_length=64, blank=True, null=True, unique=True)
