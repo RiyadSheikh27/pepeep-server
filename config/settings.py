@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'apps.cities',
     'apps.utils',
     'apps.api',
+    'apps.restaurants',
 ]
 
 MIDDLEWARE = [

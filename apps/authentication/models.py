@@ -24,9 +24,9 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     avatar = models.ImageField(upload_to="avatars/%Y/%m/", null=True, blank=True)
 
     # --- Role & status --------------------------------------------------------
-    role              = models.CharField(max_length=20, choices=Role.choices, db_index=True)
-    is_active         = models.BooleanField(default=True)
-    is_staff          = models.BooleanField(default=False)   # django admin access
+    role = models.CharField(max_length=20, choices=Role.choices, db_index=True)
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
     is_phone_verified = models.BooleanField(default=False)
 
     USERNAME_FIELD  = "phone"
@@ -50,8 +50,8 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
 class OTPVerification(TimeStampedModel):
 
     class Purpose(models.TextChoices):
-        LOGIN = "login",          "Login"
-        CHANGE_PHONE   = "change_phone",   "Change Phone"
+        LOGIN = "login", "Login"
+        CHANGE_PHONE   = "change_phone", "Change Phone"
         PASSWORD_RESET = "password_reset", "Password Reset"
 
     MAX_ATTEMPTS = 5
