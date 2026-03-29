@@ -1,7 +1,3 @@
-"""
-All auth business logic lives here. Views only call services.
-No HTTP objects (Request/Response) in this file.
-"""
 import random
 import logging
 from datetime import timedelta
@@ -15,7 +11,7 @@ from .models import OTPVerification, User
 log = logging.getLogger(__name__)
 
 
-# ── Exceptions ────────────────────────────────────────────────────────────────
+# --- Exceptions ---------------------------------------------------
 
 class AuthError(Exception):
     status_code = 400
@@ -39,7 +35,7 @@ class InvalidToken(AuthError):
     pass
 
 
-# ── OTP Service ───────────────────────────────────────────────────────────────
+# --- OTP Service --------------------------------------------------
 
 class OTPService:
 
@@ -92,7 +88,7 @@ class OTPService:
         except OTPVerification.DoesNotExist:
             raise InvalidToken("Verification token is invalid or already used.")
 
-    # ── Private ───────────────────────────────────────────────────────────────
+    # --- Private ---------------------------------------------------------------
 
     @classmethod
     def _check_rate_limit(cls, phone: str, purpose: str):
@@ -118,7 +114,7 @@ class OTPService:
         log.debug("SMS → %s | code: %s", phone, code)
 
 
-# ── JWT helpers ───────────────────────────────────────────────────────────────
+# --- JWT helpers  ---------------------------------------------------------------      
 
 def make_tokens(user: User, extra_claims: dict = None) -> dict:
     refresh = RefreshToken.for_user(user)
@@ -128,7 +124,7 @@ def make_tokens(user: User, extra_claims: dict = None) -> dict:
     return {"refresh": str(refresh), "access": str(refresh.access_token)}
 
 
-# ── Customer auth ─────────────────────────────────────────────────────────────
+# --- Customer auth --------------------------------------------------
 
 class CustomerAuthService:
 
@@ -170,7 +166,7 @@ class CustomerAuthService:
         return user
 
 
-# ── Employee auth ─────────────────────────────────────────────────────────────
+# --- Employee auth --------------------------------------------------
 
 class EmployeeAuthService:
 
@@ -201,7 +197,7 @@ class EmployeeAuthService:
         return user, tokens
 
 
-# ── Owner auth ────────────────────────────────────────────────────────────────
+# --- Owner auth --------------------------------------------------
 
 class OwnerAuthService:
 
@@ -232,7 +228,7 @@ class OwnerAuthService:
         )
 
 
-# ── Admin auth ────────────────────────────────────────────────────────────────
+# --- Admin auth --------------------------------------------------
 
 class AdminAuthService:
 
