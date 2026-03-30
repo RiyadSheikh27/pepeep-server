@@ -166,7 +166,9 @@ REST_FRAMEWORK = {
         "rest_framework.parsers.MultiPartParser",
         "rest_framework.parsers.FormParser",
     ],
-    "EXCEPTION_HANDLER":   "apps.utils.exceptions.custom_exception_handler",
+
+
+    "EXCEPTION_HANDLER": "apps.utils.exceptions.custom_exception_handler",
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.AnonRateThrottle",

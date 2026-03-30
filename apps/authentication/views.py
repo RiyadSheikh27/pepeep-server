@@ -1,18 +1,35 @@
+"""
+Views follow one pattern:
+  1. Validate input via serializer
+  2. Call service method
+  3. Map service exceptions → APIResponse.error()
+  4. Return APIResponse.success()
+Zero business logic in views.
+"""
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.parsers import JSONParser
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
+
+from apps.utils.parsers import NestedMultiPartParser
 
 from apps.utils.custom_response import APIResponse
 from apps.restaurants.models import Branch, Employee
 from .models import OTPVerification
 from .permissions import IsCustomer, IsOwner, IsAdmin
 from .serializers import (
+    # Customer
     CustomerOTPSendSerializer, CustomerOTPVerifySerializer,
     CustomerProfileSerializer,
     ChangePhoneRequestSerializer, ChangePhoneVerifySerializer,
+    # Employee
     EmployeeLoginSerializer,
-    OwnerLoginSerializer, BranchSerializer, CreateEmployeeSerializer, EmployeeDetailSerializer,
+    # Owner
+    OwnerLoginSerializer, BranchSerializer,
+    OwnerRegSubmitSerializer,
+    CreateEmployeeSerializer, EmployeeDetailSerializer,
+    # Admin
     AdminLoginSerializer, AdminForgotPasswordSerializer,
     AdminResetPasswordSerializer, AdminProfileSerializer,
 )
@@ -24,17 +41,20 @@ from .services import (
 )
 
 
-# --- Error helper ------------------------------------------------------------
+# ── Error helper ──────────────────────────────────────────────────────────────
 
 def _handle(exc) -> APIResponse:
-    """Map service exceptions to APIResponse.error with correct status codes."""
+    """Map service exceptions → APIResponse.error with correct HTTP status."""
     return APIResponse.error(
         errors={"detail": [str(exc)]},
         message=str(exc),
         status_code=getattr(exc, "status_code", 400),
     )
 
-# ---CUSTOMER------------------------------------------------------------------
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CUSTOMER
+# ─────────────────────────────────────────────────────────────────────────────
 
 class CustomerOTPSendView(APIView):
     """
@@ -42,10 +62,14 @@ class CustomerOTPSendView(APIView):
 
     Send a 6-digit OTP for login or phone-change verification.
 
-    Body: { phone, purpose }
-      purpose: "login" | "change_phone"  (default: "login")
+    Request body:
+        phone   (str, required) — Saudi phone, e.g. +966512345678
+        purpose (str)           — "login" | "change_phone"  (default: "login")
 
-    Responses: 200 | 400 | 429
+    Responses:
+        200 — OTP sent successfully
+        400 — Validation error
+        429 — Rate limited (too many requests)
     """
     permission_classes = [AllowAny]
 
@@ -67,13 +91,21 @@ class CustomerLoginView(APIView):
     """
     POST /api/v1/customer/auth/login/
 
-    Verify OTP → log in (auto-creates profile on first login).
+    Verify OTP → log in. Auto-creates profile on first login.
 
-    Body: { phone, otp_code }
+    Request body:
+        phone    (str) — Saudi phone
+        otp_code (str) — 6-digit code
 
     Response data:
-      user: { id, full_name, phone, is_new_user }
-      tokens: { access, refresh }
+        user   — { id, full_name, phone, is_new_user }
+        tokens — { access, refresh }
+
+    Responses:
+        200 — Logged in (or profile created)
+        400 — Invalid OTP / validation error
+        401 — Account deactivated
+        429 — Too many attempts
     """
     permission_classes = [AllowAny]
 
@@ -91,9 +123,9 @@ class CustomerLoginView(APIView):
             message="Welcome! Profile created." if is_new else "Logged in successfully.",
             data={
                 "user": {
-                    "id":        str(user.id),
-                    "full_name": user.full_name,
-                    "phone":     user.phone,
+                    "id":          str(user.id),
+                    "full_name":   user.full_name,
+                    "phone":       user.phone,
                     "is_new_user": is_new,
                 },
                 "tokens": tokens,
@@ -103,9 +135,14 @@ class CustomerLoginView(APIView):
 
 class CustomerProfileView(APIView):
     """
-    GET   /api/v1/customer/profile/   — view profile
-    PATCH /api/v1/customer/profile/   — edit full_name, username, email, avatar
+    GET   /api/v1/customer/profile/
+    PATCH /api/v1/customer/profile/
+
+    View or edit profile.
+    Editable fields: full_name, username, email, avatar
     Note: phone is NOT editable here — use the change-phone flow.
+
+    Auth: Bearer token (customer role)
     """
     permission_classes = [IsAuthenticated, IsCustomer]
 
@@ -125,7 +162,11 @@ class CustomerChangePhoneRequestView(APIView):
     POST /api/v1/customer/auth/change-phone/request/
 
     Step 1 of phone change — send OTP to the NEW phone number.
-    Body: { phone }  ← the NEW phone number
+
+    Request body:
+        phone (str) — the NEW phone number
+
+    Auth: Bearer token (customer role)
     """
     permission_classes = [IsAuthenticated, IsCustomer]
 
@@ -147,11 +188,19 @@ class CustomerChangePhoneVerifyView(APIView):
     """
     POST /api/v1/customer/auth/change-phone/verify/
 
-    Step 2 of phone change — verify OTP sent to the new number, then save.
-    Body: { new_phone, otp_code, phone_verification_token }
+    Step 2 of phone change — verify OTP then save the new number.
 
-    phone_verification_token is returned from the OTP send response
-    to prove the client received the OTP on the new number.
+    Flow:
+        1. Client calls /change-phone/request/ → OTP sent to new number
+        2. User enters OTP → client calls this endpoint
+        3. OTP verified → phone updated
+
+    Request body:
+        new_phone                (str) — the new phone number
+        otp_code                 (str) — 6-digit code received on new phone
+        phone_verification_token (str) — token returned from OTP verify step
+
+    Auth: Bearer token (customer role)
     """
     permission_classes = [IsAuthenticated, IsCustomer]
 
@@ -161,13 +210,11 @@ class CustomerChangePhoneVerifyView(APIView):
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         d = s.validated_data
 
-        # First verify the OTP itself
         try:
             otp = OTPService.verify(d["new_phone"], d["otp_code"], OTPVerification.Purpose.CHANGE_PHONE)
         except (OTPExpired, OTPInvalid, OTPMaxAttempts, AuthError) as e:
             return _handle(e)
 
-        # Then apply the phone change
         try:
             user = CustomerAuthService.change_phone(request.user, d["new_phone"], otp.verification_token)
         except (InvalidToken, AuthError) as e:
@@ -179,20 +226,29 @@ class CustomerChangePhoneVerifyView(APIView):
         )
 
 
-# ---EMPLOYEE------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# EMPLOYEE
+# ─────────────────────────────────────────────────────────────────────────────
 
 class EmployeeLoginView(APIView):
     """
     POST /api/v1/employee/auth/login/
 
     Login with username and password (credentials set by restaurant owner).
-    Body: { username, password }
+
+    Request body:
+        username (str)
+        password (str)
 
     Response data:
-      user: { id, username, full_name }
-      branch: { id, name, restaurant_name }
-      permissions: [...]
-      tokens: { access, refresh }
+        user        — { id, username, full_name }
+        branch      — { id, name, restaurant_name }
+        permissions — list of granted permissions
+        tokens      — { access, refresh }
+
+    Responses:
+        200 — Logged in
+        401 — Invalid credentials / deactivated
     """
     permission_classes = [AllowAny]
 
@@ -227,17 +283,180 @@ class EmployeeLoginView(APIView):
         )
 
 
-# ---OWNER----------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# OWNER — Registration
+# ─────────────────────────────────────────────────────────────────────────────
+
+class OwnerRegOTPSendView(APIView):
+    """
+    POST /api/v1/owner/auth/register/otp/send/
+
+    Step 1a — Send OTP to the owner's phone during registration.
+    This is separate from login OTP so the purpose is "owner_register".
+
+    Request body:
+        phone (str) — Saudi phone number
+
+    Responses:
+        200 — OTP sent
+        429 — Rate limited
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        phone = request.data.get("phone", "").replace(" ", "")
+        if not phone:
+            return APIResponse.error(errors={"phone": ["This field is required."]})
+        try:
+            OTPService.send(phone, OTPVerification.Purpose.OWNER_REGISTER)
+        except (OTPRateLimited, AuthError) as e:
+            return _handle(e)
+        return APIResponse.success(
+            message="OTP sent. Valid for 5 minutes.",
+            data={"phone": phone},
+        )
+
+
+class OwnerRegOTPVerifyView(APIView):
+    """
+    POST /api/v1/owner/auth/register/otp/verify/
+
+    Step 1b — Verify OTP and receive a phone_verification_token.
+    This token is required when submitting the full registration.
+
+    Request body:
+        phone    (str) — Saudi phone number
+        otp_code (str) — 6-digit code
+
+    Response data:
+        phone_verification_token (str) — short-lived token, valid until used
+
+    Responses:
+        200 — Verified, token returned
+        400 — Invalid/expired OTP
+        429 — Too many attempts
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        phone    = request.data.get("phone", "").replace(" ", "")
+        otp_code = request.data.get("otp_code", "")
+        if not phone or not otp_code:
+            return APIResponse.error(errors={"detail": ["phone and otp_code are required."]})
+        try:
+            otp = OTPService.verify(phone, otp_code, OTPVerification.Purpose.OWNER_REGISTER)
+        except (OTPExpired, OTPInvalid, OTPMaxAttempts, AuthError) as e:
+            return _handle(e)
+        return APIResponse.success(
+            message="Phone verified.",
+            data={"phone_verification_token": otp.verification_token},
+        )
+
+
+class OwnerRegSubmitView(APIView):
+    """
+    POST /api/v1/owner/auth/register/submit/
+
+    Final registration step — submit all 6 steps at once.
+
+    The frontend collects data across steps 1-6 and posts everything here.
+    The account is created in PENDING status and awaits admin approval.
+
+    Request body (multipart/form-data for file uploads):
+        # Step 1
+        full_name                (str)
+        phone                    (str)
+        email                    (str)
+        phone_verification_token (str)   — from /register/otp/verify/
+        password                 (str, min 8 chars)
+
+        # Step 2
+        legal_name        (str)
+        brand_name        (str)
+        category          (str)   — fast_food | casual | fine_dining | cafe | bakery | pizza | sushi | shawarma | seafood | other
+        logo              (file, optional)
+        short_description (str, optional)
+
+        # Step 3
+        cr_number                 (str)
+        vat_number                (str)
+        cr_document               (file)
+        vat_certificate           (file)
+        short_address             (str)
+        street_name               (str)
+        building_number           (str)
+        building_secondary_number (str, optional)
+        district                  (str)
+        postal_code               (str)
+        unit_number               (str, optional)
+        city                      (str)
+        country                   (str, default: "Saudi Arabia")
+
+        # Step 4-5: Branches (JSON array in "branches" field)
+        branches[0][name]                   (str)
+        branches[0][city]                   (str)
+        branches[0][full_address]           (str)
+        branches[0][min_order]              (decimal)
+        branches[0][opening_hours][0][day]       (str)
+        branches[0][opening_hours][0][is_open]   (bool)
+        branches[0][opening_hours][0][shifts][0][open]  (str, e.g. "09:00")
+        branches[0][opening_hours][0][shifts][0][close] (str, e.g. "22:00")
+        ... (repeat for more branches / more days)
+
+        # Step 6
+        bank_name           (str)   — al_rajhi | snb | riyad | samba | alinma | bsf | arab | sib | other
+        account_holder_name (str)
+        iban                (str)   — SA + 22 digits
+        bank_iban_pdf       (file)
+
+    Response data:
+        message — "Registration submitted. Pending admin approval."
+
+    Responses:
+        201 — Created, pending approval
+        400 — Validation error
+        400 — Phone already registered as owner
+    """
+    permission_classes = [AllowAny]
+    parser_classes     = [NestedMultiPartParser, JSONParser]
+
+    def post(self, request):
+        s = OwnerRegSubmitSerializer(data=request.data)
+        if not s.is_valid():
+            return APIResponse.error(errors=s.errors, message="Invalid input.")
+        try:
+            OwnerAuthService.register(s.validated_data)
+        except (InvalidToken, AuthError) as e:
+            return _handle(e)
+        return APIResponse.success(
+            message="Registration submitted. Pending admin approval.",
+            status_code=201,
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OWNER — Login & Branch selection
+# ─────────────────────────────────────────────────────────────────────────────
 
 class OwnerLoginView(APIView):
     """
     POST /api/v1/owner/auth/login/
 
     Login with phone and password.
-    Body: { phone, password }
+    Returns tokens + branch list so the client can show the branch selector.
 
-    Returns tokens + a branch list so the client shows the branch
-    selector screen immediately after login.
+    Request body:
+        phone    (str)
+        password (str)
+
+    Response data:
+        user     — { id, full_name }
+        branches — list of active branches
+        tokens   — { access, refresh }
+
+    Responses:
+        200 — Logged in
+        401 — Invalid credentials / deactivated / pending approval
     """
     permission_classes = [AllowAny]
 
@@ -267,8 +486,10 @@ class OwnerBranchListView(APIView):
     """
     GET /api/v1/owner/branches/
 
-    Returns the owner's active branches.
-    Used on the branch selector screen and when switching branches.
+    List the owner's active branches.
+    Used on the branch-selector screen and when switching branches.
+
+    Auth: Bearer token (owner role)
     """
     permission_classes = [IsAuthenticated, IsOwner]
 
@@ -280,14 +501,23 @@ class OwnerBranchListView(APIView):
         )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# OWNER — Staff management
+# ─────────────────────────────────────────────────────────────────────────────
+
 class OwnerStaffListCreateView(APIView):
     """
-    GET  /api/v1/owner/staff/           — list all staff across all branches
-    POST /api/v1/owner/staff/           — create a new employee account
+    GET  /api/v1/owner/staff/   — list all staff across all branches
+    POST /api/v1/owner/staff/   — create a new employee account
 
     POST body:
-      username, phone (optional), password, branch_id, permissions[]
-      permissions choices: dashboard | edit_menu | confirm_order | view_reports | manage_staff
+        username    (str)
+        phone       (str, optional)
+        password    (str, min 6 chars)
+        branch_id   (UUID)
+        permissions (list) — subset of: dashboard | edit_menu | confirm_order | view_reports | manage_staff
+
+    Auth: Bearer token (owner role)
     """
     permission_classes = [IsAuthenticated, IsOwner]
 
@@ -337,6 +567,13 @@ class OwnerStaffDetailView(APIView):
     GET    /api/v1/owner/staff/<pk>/   — employee detail
     PATCH  /api/v1/owner/staff/<pk>/   — update permissions / branch / active status
     DELETE /api/v1/owner/staff/<pk>/   — deactivate employee
+
+    PATCH body (all optional):
+        permissions (list)  — replace the full permissions list
+        branch_id   (UUID)  — move employee to another branch
+        is_active   (bool)  — activate / deactivate
+
+    Auth: Bearer token (owner role)
     """
     permission_classes = [IsAuthenticated, IsOwner]
 
@@ -361,7 +598,6 @@ class OwnerStaffDetailView(APIView):
         if not emp:
             return APIResponse.error(message="Employee not found.", status_code=404)
 
-        # Allow updating permissions, branch, is_active
         permissions = request.data.get("permissions")
         branch_id   = request.data.get("branch_id")
         is_active   = request.data.get("is_active")
@@ -377,7 +613,9 @@ class OwnerStaffDetailView(APIView):
 
         if branch_id is not None:
             try:
-                branch = Branch.objects.get(id=branch_id, restaurant__owner=request.user, is_active=True)
+                branch = Branch.objects.get(
+                    id=branch_id, restaurant__owner=request.user, is_active=True
+                )
                 emp.branch = branch
                 emp.save(update_fields=["branch", "updated_at"])
             except Branch.DoesNotExist:
@@ -401,12 +639,21 @@ class OwnerStaffDetailView(APIView):
         return APIResponse.success(message="Employee deactivated.")
 
 
-# ---ADMIN--------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# ADMIN
+# ─────────────────────────────────────────────────────────────────────────────
 
 class AdminLoginView(APIView):
     """
     POST /api/v1/admin/auth/login/
-    Body: { phone, password }
+
+    Request body:
+        phone    (str)
+        password (str)
+
+    Response data:
+        user   — { id, full_name, phone }
+        tokens — { access, refresh }
     """
     permission_classes = [AllowAny]
 
@@ -433,8 +680,10 @@ class AdminForgotPasswordView(APIView):
     """
     POST /api/v1/admin/auth/forgot-password/
 
-    Step 1 — send password-reset OTP to admin's phone.
-    Body: { phone }
+    Step 1 — send password-reset OTP to admin's registered phone.
+
+    Request body:
+        phone (str)
     """
     permission_classes = [AllowAny]
 
@@ -452,52 +701,24 @@ class AdminForgotPasswordView(APIView):
         )
 
 
-class AdminResetPasswordView(APIView):
-    """
-    POST /api/v1/admin/auth/reset-password/
-
-    Step 2 — verify OTP and set new password.
-    Body: { phone, phone_verification_token, new_password }
-    """
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        s = AdminResetPasswordSerializer(data=request.data)
-        if not s.is_valid():
-            return APIResponse.error(errors=s.errors, message="Invalid input.")
-        d = s.validated_data
-
-        # Verify OTP first
-        try:
-            otp = OTPService.verify(d["phone"], "", OTPVerification.Purpose.PASSWORD_RESET)
-        except Exception:
-            pass  # token-based path — verify via token below
-
-        try:
-            AdminAuthService.reset_password(
-                d["phone"], d["phone_verification_token"], d["new_password"]
-            )
-        except (InvalidToken, InvalidCredentials, AuthError) as e:
-            return _handle(e)
-
-        return APIResponse.success(message="Password reset successfully. Please log in.")
-
-
 class AdminVerifyOTPView(APIView):
     """
     POST /api/v1/admin/auth/otp/verify/
 
-    Verify the OTP received after forgot-password request.
-    Returns a phone_verification_token to be used in reset-password.
+    Step 2 — verify OTP, receive phone_verification_token for password reset.
 
-    Body: { phone, otp_code }
+    Request body:
+        phone    (str)
+        otp_code (str) — 6-digit code
+
+    Response data:
+        phone_verification_token (str)
     """
     permission_classes = [AllowAny]
 
     def post(self, request):
         phone    = request.data.get("phone", "").replace(" ", "")
         otp_code = request.data.get("otp_code", "")
-
         if not phone or not otp_code:
             return APIResponse.error(
                 errors={"detail": ["phone and otp_code are required."]},
@@ -507,17 +728,48 @@ class AdminVerifyOTPView(APIView):
             otp = OTPService.verify(phone, otp_code, OTPVerification.Purpose.PASSWORD_RESET)
         except (OTPExpired, OTPInvalid, OTPMaxAttempts, AuthError) as e:
             return _handle(e)
-
         return APIResponse.success(
             message="OTP verified.",
             data={"phone_verification_token": otp.verification_token},
         )
 
 
+class AdminResetPasswordView(APIView):
+    """
+    POST /api/v1/admin/auth/reset-password/
+
+    Step 3 — set new password using the verification token.
+
+    Request body:
+        phone                    (str)
+        phone_verification_token (str) — from /otp/verify/
+        new_password             (str, min 8 chars)
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        s = AdminResetPasswordSerializer(data=request.data)
+        if not s.is_valid():
+            return APIResponse.error(errors=s.errors, message="Invalid input.")
+        d = s.validated_data
+        try:
+            AdminAuthService.reset_password(
+                d["phone"], d["phone_verification_token"], d["new_password"]
+            )
+        except (InvalidToken, InvalidCredentials, AuthError) as e:
+            return _handle(e)
+        return APIResponse.success(message="Password reset successfully. Please log in.")
+
+
 class AdminProfileView(APIView):
     """
-    GET   /api/v1/admin/profile/  — view profile
-    PATCH /api/v1/admin/profile/  — edit full_name, username, email, phone, avatar
+    GET   /api/v1/admin/profile/
+    PATCH /api/v1/admin/profile/
+
+    View or edit admin profile.
+    Editable fields: full_name, username, email, phone, avatar
+
+    Auth: Bearer token (admin role)
     """
     permission_classes = [IsAuthenticated, IsAdmin]
 
@@ -532,14 +784,20 @@ class AdminProfileView(APIView):
         return APIResponse.success(message="Profile updated.", data=s.data)
 
 
-# ---SHARED--------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# SHARED
+# ─────────────────────────────────────────────────────────────────────────────
 
 class LogoutView(APIView):
     """
     POST /api/v1/auth/logout/
-    Body: { refresh }
 
-    Blacklists the refresh token — works for all roles.
+    Blacklist the refresh token. Works for all roles.
+
+    Request body:
+        refresh (str) — refresh token to invalidate
+
+    Auth: Bearer token (any authenticated role)
     """
     permission_classes = [IsAuthenticated]
 

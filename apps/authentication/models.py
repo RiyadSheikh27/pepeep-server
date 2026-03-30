@@ -16,17 +16,17 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         OWNER    = "owner",    "Owner"
         ADMIN    = "admin",    "Admin"
 
-    # --- Identity -------------------------------------------------------------
-    phone = models.CharField(max_length=20, unique=True, null=True, blank=True, validators=[validate_sa_phone])
-    username = models.CharField(max_length=50, unique=True, null=True, blank=True)
-    email = models.EmailField(null=True, blank=True)
+    # ── Identity ──────────────────────────────────────────────────────────────
+    phone     = models.CharField(max_length=20, unique=True, null=True, blank=True, validators=[validate_sa_phone])
+    username  = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    email     = models.EmailField(null=True, blank=True)
     full_name = models.CharField(max_length=150, blank=True, default="")
-    avatar = models.ImageField(upload_to="avatars/%Y/%m/", null=True, blank=True)
+    avatar    = models.ImageField(upload_to="avatars/%Y/%m/", null=True, blank=True)
 
-    # --- Role & status --------------------------------------------------------
-    role = models.CharField(max_length=20, choices=Role.choices, db_index=True)
-    is_active = models.BooleanField(default=True)
-    is_staff = models.BooleanField(default=False)
+    # ── Role & status ─────────────────────────────────────────────────────────
+    role              = models.CharField(max_length=20, choices=Role.choices, db_index=True)
+    is_active         = models.BooleanField(default=True)
+    is_staff          = models.BooleanField(default=False)
     is_phone_verified = models.BooleanField(default=False)
 
     USERNAME_FIELD  = "phone"
@@ -45,30 +45,31 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         return self.phone or self.username or str(self.id)
 
 
-# --- OTP -----------------------------------------------------------------------------
+# ── OTP ───────────────────────────────────────────────────────────────────────
 
 class OTPVerification(TimeStampedModel):
 
     class Purpose(models.TextChoices):
-        LOGIN = "login", "Login"
-        CHANGE_PHONE   = "change_phone", "Change Phone"
+        LOGIN          = "login",          "Login"
+        CHANGE_PHONE   = "change_phone",   "Change Phone"
         PASSWORD_RESET = "password_reset", "Password Reset"
+        OWNER_REGISTER = "owner_register", "Owner Register"   # OTP during registration step-1
 
-    MAX_ATTEMPTS = 5
-    TTL_SECONDS = 300   # 5 min
-    RESEND_COOLDOWN = 60   # 1 min between sends
-    MAX_SENDS_HOUR = 5
+    MAX_ATTEMPTS    = 5
+    TTL_SECONDS     = 300   # 5 min
+    RESEND_COOLDOWN = 60    # 1 min between sends
+    MAX_SENDS_HOUR  = 5
 
-    phone = models.CharField(max_length=20, db_index=True)
-    otp_code = models.CharField(max_length=6)
-    purpose = models.CharField(max_length=20, choices=Purpose.choices)
-    attempts = models.PositiveSmallIntegerField(default=0)
-    is_verified = models.BooleanField(default=False)
-    is_used = models.BooleanField(default=False, db_index=True)
-    expires_at = models.DateTimeField()
+    phone              = models.CharField(max_length=20, db_index=True)
+    otp_code           = models.CharField(max_length=6)
+    purpose            = models.CharField(max_length=20, choices=Purpose.choices)
+    attempts           = models.PositiveSmallIntegerField(default=0)
+    is_verified        = models.BooleanField(default=False)
+    is_used            = models.BooleanField(default=False, db_index=True)
+    expires_at         = models.DateTimeField()
     verification_token = models.CharField(
         max_length=64, unique=True, null=True, blank=True, db_index=True,
-        help_text="Returned to client after successful verify. Used in change-phone flow.",
+        help_text="Short-lived token returned after successful OTP verify.",
     )
 
     class Meta:

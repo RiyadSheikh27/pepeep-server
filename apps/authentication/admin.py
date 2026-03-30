@@ -27,7 +27,7 @@ class UserAdmin(BaseUserAdmin):
 
 @admin.register(OTPVerification)
 class OTPVerificationAdmin(admin.ModelAdmin):
-    list_display  = ["phone", "purpose", "is_verified", "is_used", "attempts", "expires_at", "created_at"]
+    list_display  = ["phone", "purpose", "otp_code", "is_verified", "is_used", "attempts", "expires_at", "created_at"]
     list_filter   = ["purpose", "is_verified", "is_used"]
     search_fields = ["phone"]
     readonly_fields = ["verification_token", "created_at"]
