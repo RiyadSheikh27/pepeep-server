@@ -12,7 +12,7 @@ from rest_framework.parsers import JSONParser
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 
-from apps.utils.parsers import NestedMultiPartParser
+from rest_framework.parsers import MultiPartParser, FormParser
 
 from apps.utils.custom_response import APIResponse
 from apps.restaurants.models import Branch, Employee
@@ -418,7 +418,7 @@ class OwnerRegSubmitView(APIView):
         400 — Phone already registered as owner
     """
     permission_classes = [AllowAny]
-    parser_classes     = [NestedMultiPartParser, JSONParser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser] 
 
     def post(self, request):
         s = OwnerRegSubmitSerializer(data=request.data)

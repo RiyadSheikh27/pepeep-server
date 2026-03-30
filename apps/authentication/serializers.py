@@ -1,8 +1,27 @@
+import json
 from rest_framework import serializers
 from apps.utils.validators import validate_sa_phone
 from apps.restaurants.models import Branch, Employee
 from .models import User
 
+class JSONStringOrListField(serializers.Field):
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except json.JSONDecodeError:
+                raise serializers.ValidationError("branches must be valid JSON.")
+        if not isinstance(data, list):
+            raise serializers.ValidationError("branches must be a list.")
+        if len(data) == 0:
+            raise serializers.ValidationError("At least one branch is required.")
+        s = BranchCreateSerializer(data=data, many=True)
+        if not s.is_valid():
+            raise serializers.ValidationError(s.errors)
+        return s.validated_data
+
+    def to_representation(self, value):
+        return value
 
 # ── Shared ────────────────────────────────────────────────────────────────────
 
@@ -253,7 +272,7 @@ class OwnerRegSubmitSerializer(serializers.Serializer):
     bank_iban_pdf       = serializers.FileField()
 
     # Branches (collected across steps 4-5, at least one required)
-    branches = BranchCreateSerializer(many=True, min_length=1)
+    branches = JSONStringOrListField()
 
     def validate_phone(self, v):
         return v.replace(" ", "")
@@ -263,6 +282,16 @@ class OwnerRegSubmitSerializer(serializers.Serializer):
         if not v.startswith("SA") or len(v) != 24:
             raise serializers.ValidationError("Must be a valid Saudi IBAN (SA + 22 digits).")
         return v
+
+    def to_internal_value(self, data):
+        data = data.copy()
+        if "branches" in data and isinstance(data["branches"], str):
+            import json
+            try:
+                data["branches"] = json.loads(data["branches"])
+            except json.JSONDecodeError:
+                raise serializers.ValidationError({"branches": ["Invalid JSON."]})
+        return super().to_internal_value(data)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
