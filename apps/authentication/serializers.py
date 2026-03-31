@@ -1,29 +1,10 @@
-import json
 from rest_framework import serializers
+
 from apps.utils.validators import validate_sa_phone
 from apps.restaurants.models import Branch, Employee
 from .models import User
 
-class JSONStringOrListField(serializers.Field):
-    def to_internal_value(self, data):
-        if isinstance(data, str):
-            try:
-                data = json.loads(data)
-            except json.JSONDecodeError:
-                raise serializers.ValidationError("branches must be valid JSON.")
-        if not isinstance(data, list):
-            raise serializers.ValidationError("branches must be a list.")
-        if len(data) == 0:
-            raise serializers.ValidationError("At least one branch is required.")
-        s = BranchCreateSerializer(data=data, many=True)
-        if not s.is_valid():
-            raise serializers.ValidationError(s.errors)
-        return s.validated_data
-
-    def to_representation(self, value):
-        return value
-
-# ── Shared ────────────────────────────────────────────────────────────────────
+# --- Shared ------------------------------------------------------------------
 
 class PhoneSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=20, validators=[validate_sa_phone])
@@ -32,9 +13,7 @@ class PhoneSerializer(serializers.Serializer):
         return v.replace(" ", "")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CUSTOMER
-# ─────────────────────────────────────────────────────────────────────────────
+# --- CUSTOMER -----------------------------------------------------------------
 
 class CustomerOTPSendSerializer(PhoneSerializer):
     purpose = serializers.ChoiceField(
@@ -68,7 +47,7 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
 
 
 class ChangePhoneRequestSerializer(PhoneSerializer):
-    """Step 1 — send OTP to the NEW phone number."""
+    """Step 1 of change-phone flow — send OTP to the NEW number."""
     pass
 
 
@@ -80,19 +59,20 @@ class ChangePhoneVerifySerializer(serializers.Serializer):
     def validate_new_phone(self, v):
         return v.replace(" ", "")
 
+    def validate_otp_code(self, v):
+        if not v.isdigit():
+            raise serializers.ValidationError("OTP must be 6 digits.")
+        return v
 
-# ─────────────────────────────────────────────────────────────────────────────
-# EMPLOYEE
-# ─────────────────────────────────────────────────────────────────────────────
+
+# --- Employee -----------------------------------------------------------------
 
 class EmployeeLoginSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=50)
     password = serializers.CharField(write_only=True)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# OWNER — Login
-# ─────────────────────────────────────────────────────────────────────────────
+# --- Owner Auth ---------------------------------------------------------------
 
 class OwnerLoginSerializer(serializers.Serializer):
     phone    = serializers.CharField(max_length=20, validators=[validate_sa_phone])
@@ -103,176 +83,143 @@ class OwnerLoginSerializer(serializers.Serializer):
 
 
 class BranchSerializer(serializers.ModelSerializer):
-    restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
+    """Lightweight — used in login response branch list."""
+    restaurant_name = serializers.CharField(source="restaurant.brand_name", read_only=True)
 
     class Meta:
         model  = Branch
         fields = ["id", "name", "city", "restaurant_name"]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# OWNER — Registration (6 steps)
-# ─────────────────────────────────────────────────────────────────────────────
+# --- OWNER Registration ---------------------------------------------------
 
-class OwnerRegStep1Serializer(serializers.Serializer):
-    """Step 1: Personal info + phone verification."""
+class ShiftSerializer(serializers.Serializer):
+    """Single time shift: { "open": "09:00", "close": "22:00" }"""
+    open  = serializers.TimeField(format="%H:%M", input_formats=["%H:%M"])
+    close = serializers.TimeField(format="%H:%M", input_formats=["%H:%M"])
+
+    def validate(self, attrs):
+        if attrs["open"] >= attrs["close"]:
+            raise serializers.ValidationError("Close time must be after open time.")
+        return attrs
+
+    def to_representation(self, instance):
+        # Store as plain strings so JSONField stays clean
+        return {
+            "open":  instance["open"].strftime("%H:%M") if hasattr(instance["open"], "strftime") else instance["open"],
+            "close": instance["close"].strftime("%H:%M") if hasattr(instance["close"], "strftime") else instance["close"],
+        }
+
+
+class OpeningHoursSerializer(serializers.Serializer):
+    """One row per day. Supports up to 3 shifts."""
+    DAY_CHOICES = [
+        "monday", "tuesday", "wednesday",
+        "thursday", "friday", "saturday", "sunday",
+    ]
+
+    day     = serializers.ChoiceField(choices=[(d, d.capitalize()) for d in DAY_CHOICES])
+    is_open = serializers.BooleanField(default=True)
+    shifts  = ShiftSerializer(many=True, required=False, default=list)
+
+    def validate(self, attrs):
+        if attrs.get("is_open") and not attrs.get("shifts"):
+            raise serializers.ValidationError(
+                {"shifts": "At least one shift is required when the branch is open."}
+            )
+        if len(attrs.get("shifts", [])) > 3:
+            raise serializers.ValidationError(
+                {"shifts": "A maximum of 3 shifts per day is allowed."}
+            )
+        return attrs
+
+
+class BranchCreateSerializer(serializers.Serializer):
+    """Used in registration Step 4 and add-branch."""
+    name          = serializers.CharField(max_length=200)
+    city          = serializers.CharField(max_length=100)
+    full_address  = serializers.CharField(max_length=300)
+    min_order     = serializers.DecimalField(max_digits=8, decimal_places=2)
+    opening_hours = OpeningHoursSerializer(many=True, required=False, default=list)
+
+    def validate_opening_hours(self, hours):
+        days = [h["day"] for h in hours]
+        if len(days) != len(set(days)):
+            raise serializers.ValidationError("Duplicate days found in opening hours.")
+        return hours
+
+
+class OwnerRegSubmitSerializer(serializers.Serializer):
+    """
+    Flat registration form — all steps combined.
+    Content-Type: multipart/form-data
+
+    Branches are NOT part of this serializer.
+    They are sent as a JSON string in the 'branches' field and
+    validated separately in the view using BranchCreateSerializer.
+    """
+
+    CATEGORY_CHOICES = [
+        ("fast_food",   "Fast Food"),
+        ("casual",      "Casual Dining"),
+        ("fine_dining", "Fine Dining"),
+        ("cafe",        "Café"),
+        ("bakery",      "Bakery"),
+        ("pizza",       "Pizza"),
+        ("sushi",       "Sushi"),
+        ("shawarma",    "Shawarma"),
+        ("seafood",     "Seafood"),
+        ("other",       "Other"),
+    ]
+
+    BANK_CHOICES = [
+        ("al_rajhi", "Al Rajhi Bank"),
+        ("snb",      "Saudi National Bank"),
+        ("riyad",    "Riyad Bank"),
+        ("samba",    "Samba Financial Group"),
+        ("alinma",   "Alinma Bank"),
+        ("bsf",      "Banque Saudi Fransi"),
+        ("arab",     "Arab National Bank"),
+        ("sib",      "Saudi Investment Bank"),
+        ("other",    "Other"),
+    ]
+
+    # Step 1 — owner info
     full_name                = serializers.CharField(max_length=150)
     phone                    = serializers.CharField(max_length=20, validators=[validate_sa_phone])
     email                    = serializers.EmailField()
-    phone_verification_token = serializers.CharField()   # obtained after OTP verify
+    password                 = serializers.CharField(write_only=True, min_length=8)
+    phone_verification_token = serializers.CharField()
 
-    def validate_phone(self, v):
-        return v.replace(" ", "")
-
-    def validate_phone_verification_token(self, v):
-        if not v.strip():
-            raise serializers.ValidationError("Verification token is required.")
-        return v
-
-
-class OwnerRegStep2Serializer(serializers.Serializer):
-    """Step 2: Restaurant brand details."""
-    CATEGORY_CHOICES = [
-        ("fast_food",    "Fast Food"),
-        ("casual",       "Casual Dining"),
-        ("fine_dining",  "Fine Dining"),
-        ("cafe",         "Café"),
-        ("bakery",       "Bakery"),
-        ("pizza",        "Pizza"),
-        ("sushi",        "Sushi"),
-        ("shawarma",     "Shawarma"),
-        ("seafood",      "Seafood"),
-        ("other",        "Other"),
-    ]
-
+    # Step 2 — restaurant brand
     legal_name        = serializers.CharField(max_length=200)
     brand_name        = serializers.CharField(max_length=200)
     category          = serializers.ChoiceField(choices=CATEGORY_CHOICES)
     logo              = serializers.ImageField(required=False, allow_null=True)
     short_description = serializers.CharField(max_length=500, required=False, allow_blank=True)
 
-
-class OwnerRegStep3Serializer(serializers.Serializer):
-    """Step 3: Legal documents + address."""
+    # Step 3 — legal
     cr_number       = serializers.CharField(max_length=20)
     vat_number      = serializers.CharField(max_length=20)
     cr_document     = serializers.FileField()
     vat_certificate = serializers.FileField()
-    short_address   = serializers.CharField(max_length=200)
-    street_name     = serializers.CharField(max_length=200)
-    building_number = serializers.CharField(max_length=20)
+
+    # Step 3 — address
+    short_address             = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    street_name               = serializers.CharField(max_length=200)
+    building_number           = serializers.CharField(max_length=20)
     building_secondary_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    district        = serializers.CharField(max_length=100)
-    postal_code     = serializers.CharField(max_length=10)
-    unit_number     = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    city            = serializers.CharField(max_length=100)
-    country         = serializers.CharField(max_length=100, default="Saudi Arabia")
+    district                  = serializers.CharField(max_length=100)
+    postal_code               = serializers.CharField(max_length=10)
+    unit_number               = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    city                      = serializers.CharField(max_length=100)
+    country                   = serializers.CharField(max_length=100, default="Saudi Arabia")
 
-
-class OpeningHoursSerializer(serializers.Serializer):
-    """Single day opening hours — supports up to 3 shifts."""
-    DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-
-    day     = serializers.ChoiceField(choices=[(d, d.capitalize()) for d in DAYS])
-    is_open = serializers.BooleanField(default=True)
-    shifts  = serializers.ListField(
-        child=serializers.DictField(child=serializers.CharField()),
-        max_length=3,
-        required=False,
-        default=list,
-    )
-
-    def validate_shifts(self, v):
-        for shift in v:
-            if "open" not in shift or "close" not in shift:
-                raise serializers.ValidationError("Each shift must have 'open' and 'close' times.")
-        return v
-
-
-class BranchCreateSerializer(serializers.Serializer):
-    """Single branch definition used in Step 4 / add-branch."""
-    name         = serializers.CharField(max_length=200)
-    city         = serializers.CharField(max_length=100)
-    full_address = serializers.CharField(max_length=300)
-    min_order    = serializers.DecimalField(max_digits=8, decimal_places=2)
-    opening_hours = OpeningHoursSerializer(many=True)
-
-
-class OwnerRegStep4Serializer(serializers.Serializer):
-    """Step 4: First branch details."""
-    branch = BranchCreateSerializer()
-
-
-class OwnerRegStep6Serializer(serializers.Serializer):
-    """Step 6: Bank details."""
-    BANK_CHOICES = [
-        ("al_rajhi",   "Al Rajhi Bank"),
-        ("snb",        "Saudi National Bank"),
-        ("riyad",      "Riyad Bank"),
-        ("samba",      "Samba Financial Group"),
-        ("alinma",     "Alinma Bank"),
-        ("bsf",        "Banque Saudi Fransi"),
-        ("arab",       "Arab National Bank"),
-        ("sib",        "Saudi Investment Bank"),
-        ("other",      "Other"),
-    ]
-
+    # Step 6 — bank
     bank_name           = serializers.ChoiceField(choices=BANK_CHOICES)
     account_holder_name = serializers.CharField(max_length=200)
     iban                = serializers.CharField(max_length=34)
     bank_iban_pdf       = serializers.FileField()
-
-    def validate_iban(self, v):
-        v = v.replace(" ", "").upper()
-        if not v.startswith("SA") or len(v) != 24:
-            raise serializers.ValidationError("IBAN must be a valid Saudi IBAN (SA + 22 digits).")
-        return v
-
-
-class OwnerRegSubmitSerializer(serializers.Serializer):
-    """
-    Final submit — combines all 6 steps.
-    The frontend should accumulate data across steps and send everything here.
-    Alternatively the backend can use a draft model (OwnerRegistration) and the
-    frontend just sends a `registration_id` — see services.py for both paths.
-    """
-    # Step 1
-    full_name                = serializers.CharField(max_length=150)
-    phone                    = serializers.CharField(max_length=20, validators=[validate_sa_phone])
-    email                    = serializers.EmailField()
-    phone_verification_token = serializers.CharField()
-    password                 = serializers.CharField(write_only=True, min_length=8)
-
-    # Step 2
-    legal_name        = serializers.CharField(max_length=200)
-    brand_name        = serializers.CharField(max_length=200)
-    category          = serializers.CharField(max_length=50)
-    logo              = serializers.ImageField(required=False, allow_null=True)
-    short_description = serializers.CharField(max_length=500, required=False, allow_blank=True)
-
-    # Step 3
-    cr_number       = serializers.CharField(max_length=20)
-    vat_number      = serializers.CharField(max_length=20)
-    cr_document     = serializers.FileField()
-    vat_certificate = serializers.FileField()
-    short_address   = serializers.CharField(max_length=200)
-    street_name     = serializers.CharField(max_length=200)
-    building_number = serializers.CharField(max_length=20)
-    building_secondary_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    district        = serializers.CharField(max_length=100)
-    postal_code     = serializers.CharField(max_length=10)
-    unit_number     = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    city            = serializers.CharField(max_length=100)
-    country         = serializers.CharField(max_length=100, default="Saudi Arabia")
-
-    # Step 6
-    bank_name           = serializers.CharField(max_length=50)
-    account_holder_name = serializers.CharField(max_length=200)
-    iban                = serializers.CharField(max_length=34)
-    bank_iban_pdf       = serializers.FileField()
-
-    # Branches (collected across steps 4-5, at least one required)
-    branches = JSONStringOrListField()
 
     def validate_phone(self, v):
         return v.replace(" ", "")
@@ -283,20 +230,8 @@ class OwnerRegSubmitSerializer(serializers.Serializer):
             raise serializers.ValidationError("Must be a valid Saudi IBAN (SA + 22 digits).")
         return v
 
-    def to_internal_value(self, data):
-        data = data.copy()
-        if "branches" in data and isinstance(data["branches"], str):
-            import json
-            try:
-                data["branches"] = json.loads(data["branches"])
-            except json.JSONDecodeError:
-                raise serializers.ValidationError({"branches": ["Invalid JSON."]})
-        return super().to_internal_value(data)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# OWNER — Staff management
-# ─────────────────────────────────────────────────────────────────────────────
+# --- OWNER - Staff management ------------------------------------------------------------------------------------------
 
 class CreateEmployeeSerializer(serializers.Serializer):
     username    = serializers.CharField(max_length=50)
@@ -332,9 +267,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at"]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ADMIN
-# ─────────────────────────────────────────────────────────────────────────────
+# --- ADMIN --------------------------------------------------------------------------------------------
 
 class AdminLoginSerializer(serializers.Serializer):
     phone    = serializers.CharField(max_length=20, validators=[validate_sa_phone])

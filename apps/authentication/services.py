@@ -1,6 +1,6 @@
 """
-All auth business logic lives here. Views only call services.
-No HTTP objects (Request/Response) in this file.
+All auth business logic lives here.
+Views only call services — no HTTP objects (Request/Response) in this file.
 """
 import random
 import logging
@@ -15,7 +15,7 @@ from .models import OTPVerification, User
 log = logging.getLogger(__name__)
 
 
-# ── Exceptions ────────────────────────────────────────────────────────────────
+# --- Exceptions -----------------------------------------------------------
 
 class AuthError(Exception):
     status_code = 400
@@ -39,7 +39,7 @@ class InvalidToken(AuthError):
     pass
 
 
-# ── OTP Service ───────────────────────────────────────────────────────────────
+# --- OTP Service ----------------------------------------------------------
 
 class OTPService:
 
@@ -47,8 +47,10 @@ class OTPService:
     def send(cls, phone: str, purpose: str) -> OTPVerification:
         cls._check_rate_limit(phone, purpose)
 
-        # Invalidate previous pending OTPs for this phone+purpose
-        OTPVerification.objects.filter(phone=phone, purpose=purpose, is_used=False).update(is_used=True)
+        # Invalidate any previous active OTPs for this phone + purpose
+        OTPVerification.objects.filter(
+            phone=phone, purpose=purpose, is_used=False
+        ).update(is_used=True)
 
         code = str(random.randint(100_000, 999_999))
         otp  = OTPVerification.objects.create(
@@ -57,8 +59,10 @@ class OTPService:
             purpose=purpose,
             expires_at=timezone.now() + timedelta(seconds=OTPVerification.TTL_SECONDS),
         )
+
         cls._send_sms(phone, code)
         log.info("OTP sent phone=%s purpose=%s", phone, purpose)
+        print(code)
         return otp
 
     @classmethod
@@ -86,15 +90,20 @@ class OTPService:
     def get_verified_otp(phone: str, token: str, purpose: str) -> OTPVerification:
         try:
             return OTPVerification.objects.get(
-                phone=phone, purpose=purpose,
-                verification_token=token, is_verified=True,
+                phone=phone,
+                purpose=purpose,
+                verification_token=token,
+                is_verified=True,
             )
         except OTPVerification.DoesNotExist:
             raise InvalidToken("Verification token is invalid or already used.")
 
+    # --- Private ---------------------------------------------------------------------
+
     @classmethod
     def _check_rate_limit(cls, phone: str, purpose: str):
         one_hour_ago = timezone.now() - timedelta(hours=1)
+
         count = OTPVerification.objects.filter(
             phone=phone, purpose=purpose, created_at__gte=one_hour_ago
         ).count()
@@ -104,6 +113,7 @@ class OTPService:
         last = OTPVerification.objects.filter(
             phone=phone, purpose=purpose
         ).order_by("-created_at").first()
+
         if last:
             elapsed = (timezone.now() - last.created_at).total_seconds()
             if elapsed < OTPVerification.RESEND_COOLDOWN:
@@ -116,7 +126,7 @@ class OTPService:
         log.debug("SMS → %s | code: %s", phone, code)
 
 
-# ── JWT helpers ───────────────────────────────────────────────────────────────
+# --- JWT helpers --------------------------------------------------------------
 
 def make_tokens(user: User, extra_claims: dict = None) -> dict:
     refresh = RefreshToken.for_user(user)
@@ -126,7 +136,7 @@ def make_tokens(user: User, extra_claims: dict = None) -> dict:
     return {"refresh": str(refresh), "access": str(refresh.access_token)}
 
 
-# ── Customer auth ─────────────────────────────────────────────────────────────
+# --- Customer -----------------------------------------------------------------
 
 class CustomerAuthService:
 
@@ -139,9 +149,9 @@ class CustomerAuthService:
         user, created = User.objects.get_or_create(
             phone=phone,
             defaults={
-                "role":              User.Role.CUSTOMER,
+                "role": User.Role.CUSTOMER,
                 "is_phone_verified": True,
-                "is_active":         True,
+                "is_active": True,
             },
         )
         if not user.is_active:
@@ -152,19 +162,19 @@ class CustomerAuthService:
     @staticmethod
     @transaction.atomic
     def change_phone(user: User, new_phone: str, otp_token: str) -> User:
-        """Verify OTP token for new_phone, then update user's phone."""
+        """Verify token for new_phone, then update user's phone."""
         OTPService.get_verified_otp(new_phone, otp_token, OTPVerification.Purpose.CHANGE_PHONE)
 
         if User.objects.filter(phone=new_phone).exclude(id=user.id).exists():
             raise AuthError("This phone number is already in use.")
 
-        user.phone = new_phone
+        user.phone             = new_phone
         user.is_phone_verified = True
         user.save(update_fields=["phone", "is_phone_verified", "updated_at"])
         return user
 
 
-# ── Employee auth ─────────────────────────────────────────────────────────────
+# --- Employee ---------------------------------------------------------------------
 
 class EmployeeAuthService:
 
@@ -185,7 +195,7 @@ class EmployeeAuthService:
         if not user.is_active:
             raise InvalidCredentials("Your account has been deactivated.")
 
-        emp = user.employee_profile
+        emp    = user.employee_profile
         tokens = make_tokens(user, extra_claims={
             "branch_id":     str(emp.branch_id),
             "branch_name":   emp.branch.name,
@@ -195,7 +205,7 @@ class EmployeeAuthService:
         return user, tokens
 
 
-# ── Owner auth ────────────────────────────────────────────────────────────────
+# --- Owner --------------------------------------------------------------
 
 class OwnerAuthService:
 
@@ -221,38 +231,42 @@ class OwnerAuthService:
             Branch.objects
             .filter(restaurant__owner=user, is_active=True)
             .select_related("restaurant")
-            .order_by("restaurant__name", "name")
+            .order_by("restaurant__brand_name", "name")
         )
 
     @staticmethod
     @transaction.atomic
-    def register(data: dict) -> User:
+    def register(data: dict, branches: list) -> User:
         """
-        Create owner User + Restaurant + Branches + BankDetail in one transaction.
-        `data` is the validated data from OwnerRegSubmitSerializer.
+        Create owner User → Restaurant → Branches → BranchOpeningHours → BankDetail
+        in a single atomic transaction.
 
-        Raises AuthError for business rule violations.
+        Args:
+            data:     validated data from OwnerRegSubmitSerializer
+            branches: list of validated branch dicts from BranchCreateSerializer
         """
-        from apps.restaurants.models import Restaurant, Branch, RestaurantBankDetail
+        from apps.restaurants.models import (
+            Restaurant, Branch, BranchOpeningHours, RestaurantBankDetail
+        )
 
         phone = data["phone"]
         token = data["phone_verification_token"]
 
-        # 1. Verify phone ownership
+        # 1. Confirm phone ownership via OTP token
         OTPService.get_verified_otp(phone, token, OTPVerification.Purpose.OWNER_REGISTER)
 
-        # 2. Phone must not already be an owner
+        # 2. Check no existing owner account with this phone
         if User.objects.filter(phone=phone, role=User.Role.OWNER).exists():
-            raise AuthError("An owner account with this phone number already exists.")
+            raise AuthError("An owner account with this phone already exists.")
 
-        # 3. Create the owner user (inactive until admin approval)
+        # 3. Create owner user (inactive until admin approves)
         user = User.objects.create_user(
             phone=phone,
             password=data["password"],
             email=data.get("email"),
             full_name=data.get("full_name", ""),
             role=User.Role.OWNER,
-            is_active=False,          # pending admin approval
+            is_active=False,
             is_phone_verified=True,
         )
 
@@ -268,7 +282,7 @@ class OwnerAuthService:
             vat_number=data["vat_number"],
             cr_document=data["cr_document"],
             vat_certificate=data["vat_certificate"],
-            short_address=data["short_address"],
+            short_address=data.get("short_address", ""),
             street_name=data["street_name"],
             building_number=data["building_number"],
             building_secondary_number=data.get("building_secondary_number", ""),
@@ -277,28 +291,39 @@ class OwnerAuthService:
             unit_number=data.get("unit_number", ""),
             city=data["city"],
             country=data.get("country", "Saudi Arabia"),
-            status="pending",
+            status=Restaurant.Status.PENDING,
+            is_active=False,
         )
 
-        # 5. Create branches
-        for branch_data in data["branches"]:
+
+        for branch_data in branches:
             branch = Branch.objects.create(
                 restaurant=restaurant,
                 name=branch_data["name"],
                 city=branch_data["city"],
                 full_address=branch_data["full_address"],
                 min_order=branch_data["min_order"],
-                is_active=False,   # activated when restaurant is approved
+                is_active=False,
             )
-            # Save opening hours
-            for day_hours in branch_data.get("opening_hours", []):
-                branch.opening_hours.create(
-                    day=day_hours["day"],
-                    is_open=day_hours.get("is_open", True),
-                    shifts=day_hours.get("shifts", []),
+
+            for hours_data in branch_data.get("opening_hours", []):
+                # Normalise shift times to plain strings before saving to JSONField
+                shifts = [
+                    {
+                        "open":  s["open"].strftime("%H:%M") if hasattr(s["open"], "strftime") else s["open"],
+                        "close": s["close"].strftime("%H:%M") if hasattr(s["close"], "strftime") else s["close"],
+                    }
+                    for s in hours_data.get("shifts", [])
+                ]
+
+                BranchOpeningHours.objects.create(
+                    branch=branch,
+                    day=hours_data["day"],
+                    is_open=hours_data.get("is_open", True),
+                    shifts=shifts,
                 )
 
-        # 6. Save bank details
+        # 6. Create bank details
         RestaurantBankDetail.objects.create(
             restaurant=restaurant,
             bank_name=data["bank_name"],
@@ -307,11 +332,11 @@ class OwnerAuthService:
             bank_iban_pdf=data["bank_iban_pdf"],
         )
 
-        log.info("Owner registration submitted: user_id=%s phone=%s", user.id, phone)
+        log.info("Owner registration submitted: user=%s phone=%s", user.id, phone)
         return user
 
 
-# ── Admin auth ────────────────────────────────────────────────────────────────
+# --- Admin ------------------------------------------------------------------
 
 class AdminAuthService:
 
@@ -334,10 +359,12 @@ class AdminAuthService:
     @transaction.atomic
     def reset_password(phone: str, otp_token: str, new_password: str) -> User:
         OTPService.get_verified_otp(phone, otp_token, OTPVerification.Purpose.PASSWORD_RESET)
+
         try:
             user = User.objects.get(phone=phone, role=User.Role.ADMIN)
         except User.DoesNotExist:
             raise InvalidCredentials("No admin account found for this number.")
+
         user.set_password(new_password)
         user.save(update_fields=["password", "updated_at"])
         return user

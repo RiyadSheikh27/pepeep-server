@@ -1,6 +1,5 @@
 from rest_framework.permissions import BasePermission
 
-
 def _is(role):
     class RolePermission(BasePermission):
         message = f"Access restricted to {role} accounts."
@@ -16,8 +15,8 @@ def _is(role):
 
 IsCustomer = _is("customer")
 IsEmployee = _is("employee")
-IsOwner    = _is("owner")
-IsAdmin    = _is("admin")
+IsOwner = _is("owner")
+IsAdmin = _is("admin")
 
 
 class IsOwnerOrAdmin(BasePermission):

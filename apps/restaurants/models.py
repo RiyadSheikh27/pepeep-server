@@ -1,6 +1,7 @@
 from django.db import models
 from apps.utils.models import TimeStampedModel
 
+# --- Restaurant Section -----------------------------------------------------------------------
 
 class Restaurant(TimeStampedModel):
 
@@ -27,21 +28,20 @@ class Restaurant(TimeStampedModel):
         related_name="restaurants",
     )
 
-    # Step 2
+    # Brand
     legal_name        = models.CharField(max_length=200)
     brand_name        = models.CharField(max_length=200)
-    name              = models.CharField(max_length=200, blank=True, default="")  # keep for compatibility
     category          = models.CharField(max_length=50, choices=Category.choices, default=Category.OTHER)
     logo              = models.ImageField(upload_to="restaurants/logos/%Y/%m/", null=True, blank=True)
     short_description = models.TextField(blank=True, default="")
 
-    # Step 3 — Legal
+    # Legal
     cr_number       = models.CharField(max_length=20, blank=True, default="")
     vat_number      = models.CharField(max_length=20, blank=True, default="")
-    cr_document     = models.FileField(upload_to="restaurants/docs/%Y/%m/", null=True, blank=True)
-    vat_certificate = models.FileField(upload_to="restaurants/docs/%Y/%m/", null=True, blank=True)
+    cr_document     = models.FileField(upload_to="restaurants/docs/cr/%Y/%m/", null=True, blank=True)
+    vat_certificate = models.FileField(upload_to="restaurants/docs/vat/%Y/%m/", null=True, blank=True)
 
-    # Step 3 — Address
+    # Address
     short_address             = models.CharField(max_length=200, blank=True, default="")
     street_name               = models.CharField(max_length=200, blank=True, default="")
     building_number           = models.CharField(max_length=20,  blank=True, default="")
@@ -50,47 +50,16 @@ class Restaurant(TimeStampedModel):
     postal_code               = models.CharField(max_length=10,  blank=True, default="")
     unit_number               = models.CharField(max_length=20,  blank=True, default="")
     city                      = models.CharField(max_length=100, blank=True, default="")
-    country                   = models.CharField(max_length=100, blank=True, default="Saudi Arabia")
+    country                   = models.CharField(max_length=100, default="Saudi Arabia")
 
     status    = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
-    is_active = models.BooleanField(default=True, db_index=True)
+    is_active = models.BooleanField(default=False, db_index=True)  # activated on approval
 
     class Meta:
         db_table = "restaurants"
 
     def __str__(self):
-        return self.brand_name or self.name
-
-
-class Branch(TimeStampedModel):
-    restaurant  = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name="branches")
-    name        = models.CharField(max_length=200)
-    city        = models.CharField(max_length=100, blank=True, default="")
-    full_address = models.CharField(max_length=300, blank=True, default="")
-    min_order   = models.DecimalField(max_digits=8, decimal_places=2, default=0)
-    is_active   = models.BooleanField(default=True, db_index=True)
-
-    class Meta:
-        db_table = "branches"
-
-    def __str__(self):
-        return f"{self.restaurant.brand_name} — {self.name}"
-
-
-class BranchOpeningHours(TimeStampedModel):
-    DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-
-    branch  = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="opening_hours")
-    day     = models.CharField(max_length=10)
-    is_open = models.BooleanField(default=True)
-    shifts  = models.JSONField(default=list)  # [{"open": "09:00", "close": "22:00"}, ...]
-
-    class Meta:
-        db_table = "branch_opening_hours"
-        unique_together = [["branch", "day"]]
-
-    def __str__(self):
-        return f"{self.branch.name} — {self.day}"
+        return self.brand_name
 
 
 class RestaurantBankDetail(TimeStampedModel):
@@ -119,6 +88,43 @@ class RestaurantBankDetail(TimeStampedModel):
         return f"{self.restaurant.brand_name} — {self.bank_name}"
 
 
+# ---Branch Section --------------------------------------------------------------------------------
+
+class Branch(TimeStampedModel):
+    restaurant   = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name="branches")
+    name         = models.CharField(max_length=200)
+    city         = models.CharField(max_length=100, blank=True, default="")
+    full_address = models.CharField(max_length=300, blank=True, default="")
+    min_order    = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    is_active    = models.BooleanField(default=False, db_index=True)  # activated on approval
+
+    class Meta:
+        db_table = "branches"
+
+    def __str__(self):
+        return f"{self.restaurant.brand_name} — {self.name}"
+
+
+class BranchOpeningHours(TimeStampedModel):
+    """
+    One row per day per branch.
+    shifts: [{"open": "09:00", "close": "22:00"}, ...]  — up to 3 shifts per day.
+    """
+    branch  = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="opening_hours")
+    day     = models.CharField(max_length=10)   # monday, tuesday, ...
+    is_open = models.BooleanField(default=True)
+    shifts  = models.JSONField(default=list)
+
+    class Meta:
+        db_table        = "branch_opening_hours"
+        unique_together = [["branch", "day"]]
+
+    def __str__(self):
+        return f"{self.branch.name} — {self.day}"
+    
+    
+# --- Employee Section ----------------------------------------------------------------------------
+
 class Employee(TimeStampedModel):
 
     class Permission(models.TextChoices):
@@ -130,12 +136,12 @@ class Employee(TimeStampedModel):
 
     ALL_PERMISSIONS = [p.value for p in Permission]
 
-    user       = models.OneToOneField(
+    user        = models.OneToOneField(
         "authentication.User", on_delete=models.CASCADE, related_name="employee_profile"
     )
-    branch     = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="employees")
+    branch      = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="employees")
     permissions = models.JSONField(default=list)
-    created_by = models.ForeignKey(
+    created_by  = models.ForeignKey(
         "authentication.User", on_delete=models.SET_NULL, null=True, related_name="created_employees"
     )
 

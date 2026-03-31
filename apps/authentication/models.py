@@ -7,6 +7,7 @@ from apps.utils.models import TimeStampedModel
 from apps.utils.validators import validate_sa_phone
 from .managers import UserManager
 
+# --- User Model ------------------------------------------------------------------------------------------------
 
 class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
 
@@ -16,14 +17,12 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         OWNER    = "owner",    "Owner"
         ADMIN    = "admin",    "Admin"
 
-    # ── Identity ──────────────────────────────────────────────────────────────
     phone     = models.CharField(max_length=20, unique=True, null=True, blank=True, validators=[validate_sa_phone])
     username  = models.CharField(max_length=50, unique=True, null=True, blank=True)
     email     = models.EmailField(null=True, blank=True)
     full_name = models.CharField(max_length=150, blank=True, default="")
     avatar    = models.ImageField(upload_to="avatars/%Y/%m/", null=True, blank=True)
 
-    # ── Role & status ─────────────────────────────────────────────────────────
     role              = models.CharField(max_length=20, choices=Role.choices, db_index=True)
     is_active         = models.BooleanField(default=True)
     is_staff          = models.BooleanField(default=False)
@@ -45,7 +44,7 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         return self.phone or self.username or str(self.id)
 
 
-# ── OTP ───────────────────────────────────────────────────────────────────────
+# --- OTP -----------------------------------------------------------------------------------
 
 class OTPVerification(TimeStampedModel):
 
@@ -53,7 +52,7 @@ class OTPVerification(TimeStampedModel):
         LOGIN          = "login",          "Login"
         CHANGE_PHONE   = "change_phone",   "Change Phone"
         PASSWORD_RESET = "password_reset", "Password Reset"
-        OWNER_REGISTER = "owner_register", "Owner Register"   # OTP during registration step-1
+        OWNER_REGISTER = "owner_register", "Owner Register"
 
     MAX_ATTEMPTS    = 5
     TTL_SECONDS     = 300   # 5 min
@@ -92,8 +91,8 @@ class OTPVerification(TimeStampedModel):
         if self.otp_code != code:
             self.save(update_fields=["attempts"])
             return False
-        self.is_verified        = True
-        self.is_used            = True
+        self.is_verified = True
+        self.is_used = True
         self.verification_token = secrets.token_hex(32)
         self.save(update_fields=["attempts", "is_verified", "is_used", "verification_token"])
         return True
