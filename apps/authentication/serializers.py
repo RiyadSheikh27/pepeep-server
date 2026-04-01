@@ -1,10 +1,13 @@
 from rest_framework import serializers
 
 from apps.utils.validators import validate_sa_phone
-from apps.restaurants.models import Branch, Employee
+from apps.restaurants.models import Branch, Employee, BranchOpeningHours
 from .models import User
 
-# --- Shared ------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Shared / Mixins
+# ---------------------------------------------------------------------------
 
 class PhoneSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=20, validators=[validate_sa_phone])
@@ -13,16 +16,7 @@ class PhoneSerializer(serializers.Serializer):
         return v.replace(" ", "")
 
 
-# --- CUSTOMER -----------------------------------------------------------------
-
-class CustomerOTPSendSerializer(PhoneSerializer):
-    purpose = serializers.ChoiceField(
-        choices=["login", "change_phone"],
-        default="login",
-    )
-
-
-class CustomerOTPVerifySerializer(PhoneSerializer):
+class OTPCodeMixin(serializers.Serializer):
     otp_code = serializers.CharField(min_length=6, max_length=6)
 
     def validate_otp_code(self, v):
@@ -31,9 +25,21 @@ class CustomerOTPVerifySerializer(PhoneSerializer):
         return v
 
 
+# ---------------------------------------------------------------------------
+# Customer
+# ---------------------------------------------------------------------------
+
+class CustomerOTPSendSerializer(PhoneSerializer):
+    purpose = serializers.ChoiceField(choices=["login", "change_phone"], default="login")
+
+
+class CustomerOTPVerifySerializer(PhoneSerializer, OTPCodeMixin):
+    pass
+
+
 class CustomerProfileSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = User
+        model = User
         fields = ["id", "full_name", "username", "email", "phone", "avatar", "created_at"]
         read_only_fields = ["id", "phone", "created_at"]
 
@@ -47,32 +53,63 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
 
 
 class ChangePhoneRequestSerializer(PhoneSerializer):
-    """Step 1 of change-phone flow — send OTP to the NEW number."""
+    """Step 1 — send OTP to the NEW phone number."""
     pass
 
 
-class ChangePhoneVerifySerializer(serializers.Serializer):
+class ChangePhoneVerifySerializer(OTPCodeMixin):
     new_phone                = serializers.CharField(max_length=20, validators=[validate_sa_phone])
-    otp_code                 = serializers.CharField(min_length=6, max_length=6)
     phone_verification_token = serializers.CharField()
 
     def validate_new_phone(self, v):
         return v.replace(" ", "")
 
-    def validate_otp_code(self, v):
-        if not v.isdigit():
-            raise serializers.ValidationError("OTP must be 6 digits.")
-        return v
 
-
-# --- Employee -----------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Employee
+# ---------------------------------------------------------------------------
 
 class EmployeeLoginSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=50)
     password = serializers.CharField(write_only=True)
 
 
-# --- Owner Auth ---------------------------------------------------------------
+class EmployeeDetailSerializer(serializers.ModelSerializer):
+    username    = serializers.CharField(source="user.username")
+    phone       = serializers.CharField(source="user.phone")
+    is_active   = serializers.BooleanField(source="user.is_active")
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
+
+    class Meta:
+        model = Employee
+        fields = ["id", "username", "phone", "is_active", "branch_name", "permissions", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+
+class CreateEmployeeSerializer(serializers.Serializer):
+    username    = serializers.CharField(max_length=50)
+    phone       = serializers.CharField(max_length=20, validators=[validate_sa_phone], required=False, allow_blank=True)
+    password    = serializers.CharField(write_only=True, min_length=6)
+    branch_id   = serializers.UUIDField()
+    permissions = serializers.MultipleChoiceField(choices=Employee.ALL_PERMISSIONS, default=list)
+
+    def validate_username(self, v):
+        if User.objects.filter(username=v).exists():
+            raise serializers.ValidationError("Username already taken.")
+        return v
+
+    def validate_branch_id(self, v):
+        if not Branch.objects.filter(id=v, restaurant__owner=self.context["request"].user, is_active=True).exists():
+            raise serializers.ValidationError("Branch not found or does not belong to you.")
+        return v
+
+    def validate_phone(self, v):
+        return v.replace(" ", "") if v else v
+
+
+# ---------------------------------------------------------------------------
+# Owner — Auth
+# ---------------------------------------------------------------------------
 
 class OwnerLoginSerializer(serializers.Serializer):
     phone    = serializers.CharField(max_length=20, validators=[validate_sa_phone])
@@ -91,10 +128,11 @@ class BranchSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "city", "restaurant_name"]
 
 
-# --- OWNER Registration ---------------------------------------------------
+# ---------------------------------------------------------------------------
+# Opening Hours (shared between registration and owner profile update)
+# ---------------------------------------------------------------------------
 
 class ShiftSerializer(serializers.Serializer):
-    """Single time shift: { "open": "09:00", "close": "22:00" }"""
     open  = serializers.TimeField(format="%H:%M", input_formats=["%H:%M"])
     close = serializers.TimeField(format="%H:%M", input_formats=["%H:%M"])
 
@@ -104,19 +142,12 @@ class ShiftSerializer(serializers.Serializer):
         return attrs
 
     def to_representation(self, instance):
-        # Store as plain strings so JSONField stays clean
-        return {
-            "open":  instance["open"].strftime("%H:%M") if hasattr(instance["open"], "strftime") else instance["open"],
-            "close": instance["close"].strftime("%H:%M") if hasattr(instance["close"], "strftime") else instance["close"],
-        }
+        fmt = lambda t: t.strftime("%H:%M") if hasattr(t, "strftime") else t
+        return {"open": fmt(instance["open"]), "close": fmt(instance["close"])}
 
 
 class OpeningHoursSerializer(serializers.Serializer):
-    """One row per day. Supports up to 3 shifts."""
-    DAY_CHOICES = [
-        "monday", "tuesday", "wednesday",
-        "thursday", "friday", "saturday", "sunday",
-    ]
+    DAY_CHOICES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
     day     = serializers.ChoiceField(choices=[(d, d.capitalize()) for d in DAY_CHOICES])
     is_open = serializers.BooleanField(default=True)
@@ -124,18 +155,19 @@ class OpeningHoursSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         if attrs.get("is_open") and not attrs.get("shifts"):
-            raise serializers.ValidationError(
-                {"shifts": "At least one shift is required when the branch is open."}
-            )
+            raise serializers.ValidationError({"shifts": "At least one shift is required when the branch is open."})
         if len(attrs.get("shifts", [])) > 3:
-            raise serializers.ValidationError(
-                {"shifts": "A maximum of 3 shifts per day is allowed."}
-            )
+            raise serializers.ValidationError({"shifts": "A maximum of 3 shifts per day is allowed."})
         return attrs
 
 
+class OpeningHoursReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = BranchOpeningHours
+        fields = ["id", "day", "is_open", "shifts"]
+
+
 class BranchCreateSerializer(serializers.Serializer):
-    """Used in registration Step 4 and add-branch."""
     name          = serializers.CharField(max_length=200)
     city          = serializers.CharField(max_length=100)
     full_address  = serializers.CharField(max_length=300)
@@ -149,41 +181,30 @@ class BranchCreateSerializer(serializers.Serializer):
         return hours
 
 
+# ---------------------------------------------------------------------------
+# Owner — Registration
+# ---------------------------------------------------------------------------
+
+CATEGORY_CHOICES = [
+    ("fast_food", "Fast Food"), ("casual", "Casual Dining"), ("fine_dining", "Fine Dining"),
+    ("cafe", "Café"), ("bakery", "Bakery"), ("pizza", "Pizza"),
+    ("sushi", "Sushi"), ("shawarma", "Shawarma"), ("seafood", "Seafood"), ("other", "Other"),
+]
+
+BANK_CHOICES = [
+    ("al_rajhi", "Al Rajhi Bank"), ("snb", "Saudi National Bank"), ("riyad", "Riyad Bank"),
+    ("samba", "Samba Financial Group"), ("alinma", "Alinma Bank"), ("bsf", "Banque Saudi Fransi"),
+    ("arab", "Arab National Bank"), ("sib", "Saudi Investment Bank"), ("other", "Other"),
+]
+
+
 class OwnerRegSubmitSerializer(serializers.Serializer):
     """
     Flat registration form — all steps combined.
     Content-Type: multipart/form-data
-
-    Branches are NOT part of this serializer.
-    They are sent as a JSON string in the 'branches' field and
+    Branches are sent as a JSON string in the 'branches' field,
     validated separately in the view using BranchCreateSerializer.
     """
-
-    CATEGORY_CHOICES = [
-        ("fast_food",   "Fast Food"),
-        ("casual",      "Casual Dining"),
-        ("fine_dining", "Fine Dining"),
-        ("cafe",        "Café"),
-        ("bakery",      "Bakery"),
-        ("pizza",       "Pizza"),
-        ("sushi",       "Sushi"),
-        ("shawarma",    "Shawarma"),
-        ("seafood",     "Seafood"),
-        ("other",       "Other"),
-    ]
-
-    BANK_CHOICES = [
-        ("al_rajhi", "Al Rajhi Bank"),
-        ("snb",      "Saudi National Bank"),
-        ("riyad",    "Riyad Bank"),
-        ("samba",    "Samba Financial Group"),
-        ("alinma",   "Alinma Bank"),
-        ("bsf",      "Banque Saudi Fransi"),
-        ("arab",     "Arab National Bank"),
-        ("sib",      "Saudi Investment Bank"),
-        ("other",    "Other"),
-    ]
-
     # Step 1 — owner info
     full_name                = serializers.CharField(max_length=150)
     phone                    = serializers.CharField(max_length=20, validators=[validate_sa_phone])
@@ -215,7 +236,7 @@ class OwnerRegSubmitSerializer(serializers.Serializer):
     city                      = serializers.CharField(max_length=100)
     country                   = serializers.CharField(max_length=100, default="Saudi Arabia")
 
-    # Step 6 — bank
+    # Step 4 — bank
     bank_name           = serializers.ChoiceField(choices=BANK_CHOICES)
     account_holder_name = serializers.CharField(max_length=200)
     iban                = serializers.CharField(max_length=34)
@@ -231,43 +252,77 @@ class OwnerRegSubmitSerializer(serializers.Serializer):
         return v
 
 
-# --- OWNER - Staff management ------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Owner — Profile & Restaurant Update
+# ---------------------------------------------------------------------------
 
-class CreateEmployeeSerializer(serializers.Serializer):
-    username    = serializers.CharField(max_length=50)
-    phone       = serializers.CharField(max_length=20, validators=[validate_sa_phone], required=False, allow_blank=True)
-    password    = serializers.CharField(write_only=True, min_length=6)
-    branch_id   = serializers.UUIDField()
-    permissions = serializers.MultipleChoiceField(choices=Employee.ALL_PERMISSIONS, default=list)
+class OwnerProfileSerializer(serializers.ModelSerializer):
+    """Read/update owner's personal info (full_name, email, avatar)."""
+    class Meta:
+        model  = User
+        fields = ["id", "full_name", "email", "phone", "avatar", "created_at"]
+        read_only_fields = ["id", "phone", "created_at"]
 
-    def validate_username(self, v):
-        if User.objects.filter(username=v).exists():
-            raise serializers.ValidationError("Username already taken.")
+
+class RestaurantUpdateSerializer(serializers.Serializer):
+    """Partial update for restaurant brand + legal + address info."""
+    # Brand
+    brand_name        = serializers.CharField(max_length=200, required=False)
+    category          = serializers.ChoiceField(choices=CATEGORY_CHOICES, required=False)
+    logo              = serializers.ImageField(required=False, allow_null=True)
+    short_description = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+    # Legal
+    cr_number       = serializers.CharField(max_length=20, required=False)
+    vat_number      = serializers.CharField(max_length=20, required=False)
+    cr_document     = serializers.FileField(required=False, allow_null=True)
+    vat_certificate = serializers.FileField(required=False, allow_null=True)
+
+    # Address
+    short_address             = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    street_name               = serializers.CharField(max_length=200, required=False)
+    building_number           = serializers.CharField(max_length=20, required=False)
+    building_secondary_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    district                  = serializers.CharField(max_length=100, required=False)
+    postal_code               = serializers.CharField(max_length=10, required=False)
+    unit_number               = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    city                      = serializers.CharField(max_length=100, required=False)
+    country                   = serializers.CharField(max_length=100, required=False)
+
+
+class BankDetailUpdateSerializer(serializers.Serializer):
+    bank_name           = serializers.ChoiceField(choices=BANK_CHOICES, required=False)
+    account_holder_name = serializers.CharField(max_length=200, required=False)
+    iban                = serializers.CharField(max_length=34, required=False)
+    bank_iban_pdf       = serializers.FileField(required=False, allow_null=True)
+
+    def validate_iban(self, v):
+        v = v.replace(" ", "").upper()
+        if not v.startswith("SA") or len(v) != 24:
+            raise serializers.ValidationError("Must be a valid Saudi IBAN (SA + 22 digits).")
         return v
 
-    def validate_branch_id(self, v):
-        request = self.context["request"]
-        if not Branch.objects.filter(id=v, restaurant__owner=request.user, is_active=True).exists():
-            raise serializers.ValidationError("Branch not found or does not belong to you.")
-        return v
 
-    def validate_phone(self, v):
-        return v.replace(" ", "") if v else v
-
-
-class EmployeeDetailSerializer(serializers.ModelSerializer):
-    username    = serializers.CharField(source="user.username")
-    phone       = serializers.CharField(source="user.phone")
-    is_active   = serializers.BooleanField(source="user.is_active")
-    branch_name = serializers.CharField(source="branch.name", read_only=True)
+class BranchDetailSerializer(serializers.ModelSerializer):
+    opening_hours = OpeningHoursReadSerializer(many=True, read_only=True)
+    is_active     = serializers.BooleanField(read_only=True)
 
     class Meta:
-        model  = Employee
-        fields = ["id", "username", "phone", "is_active", "branch_name", "permissions", "created_at"]
-        read_only_fields = ["id", "created_at"]
+        model  = Branch
+        fields = ["id", "name", "city", "full_address", "min_order", "is_active", "opening_hours"]
 
 
-# --- ADMIN --------------------------------------------------------------------------------------------
+class BranchUpdateSerializer(serializers.Serializer):
+    """Partial update for an existing branch (name, city, address, min_order)."""
+    name         = serializers.CharField(max_length=200, required=False)
+    city         = serializers.CharField(max_length=100, required=False)
+    full_address = serializers.CharField(max_length=300, required=False)
+    min_order    = serializers.DecimalField(max_digits=8, decimal_places=2, required=False)
+
+
+# ---------------------------------------------------------------------------
+# Admin
+# ---------------------------------------------------------------------------
 
 class AdminLoginSerializer(serializers.Serializer):
     phone    = serializers.CharField(max_length=20, validators=[validate_sa_phone])
@@ -281,13 +336,9 @@ class AdminForgotPasswordSerializer(PhoneSerializer):
     pass
 
 
-class AdminResetPasswordSerializer(serializers.Serializer):
-    phone                    = serializers.CharField(max_length=20, validators=[validate_sa_phone])
+class AdminResetPasswordSerializer(PhoneSerializer):
     phone_verification_token = serializers.CharField()
     new_password             = serializers.CharField(write_only=True, min_length=8)
-
-    def validate_phone(self, v):
-        return v.replace(" ", "")
 
 
 class AdminProfileSerializer(serializers.ModelSerializer):
