@@ -7,6 +7,13 @@ from rest_framework_simplejwt.exceptions import TokenError
 
 from apps.utils.custom_response import APIResponse
 from apps.restaurants.models import Branch, Employee
+from apps.restaurants.serializers import (
+    RestaurantSerializer,
+    RestaurantBankDetailSerializer,
+    BranchDetailSerializer,
+    RestaurantListSerializer,
+    BranchListSerializer,
+)
 from .models import OTPVerification
 from .permissions import IsCustomer, IsOwner, IsAdmin
 from .serializers import (
@@ -16,16 +23,15 @@ from .serializers import (
     ChangePhoneRequestSerializer, ChangePhoneVerifySerializer,
     # Employee
     EmployeeLoginSerializer, EmployeeDetailSerializer, CreateEmployeeSerializer,
-    # Owner — auth
-    OwnerLoginSerializer, BranchSerializer,
+    # Owner — auth & registration
+    OwnerLoginSerializer, BranchLoginSerializer,
     BranchCreateSerializer, OwnerRegSubmitSerializer,
     # Owner — profile
-    OwnerProfileSerializer, RestaurantUpdateSerializer,
-    BankDetailUpdateSerializer, BranchDetailSerializer, BranchUpdateSerializer,
-    OpeningHoursSerializer,
+    OwnerProfileSerializer, OpeningHoursWriteSerializer,
     # Admin
     AdminLoginSerializer, AdminForgotPasswordSerializer,
     AdminResetPasswordSerializer, AdminProfileSerializer,
+    AdminCustomerListSerializer, AdminOwnerListSerializer, AdminEmployeeListSerializer,
 )
 from .services import (
     OTPService, CustomerAuthService, EmployeeAuthService,
@@ -45,6 +51,59 @@ def _handle(exc):
         errors={"detail": [str(exc)]},
         message=str(exc),
         status_code=getattr(exc, "status_code", 400),
+    )
+
+
+def _paginate(request, qs, serializer_class):
+    """
+    Applies page-based pagination to any queryset and returns an APIResponse.
+    Query params: page (default 1), page_size (default 20, max 100).
+    """
+    try:
+        page      = max(1, int(request.query_params.get("page", 1)))
+        page_size = min(100, max(1, int(request.query_params.get("page_size", 20))))
+    except (ValueError, TypeError):
+        page, page_size = 1, 20
+
+    total  = qs.count()
+    start  = (page - 1) * page_size
+    end    = start + page_size
+    data   = serializer_class(qs[start:end], many=True).data
+
+    return APIResponse.success(
+        data=data,
+        meta={
+            "total":     total,
+            "page":      page,
+            "page_size": page_size,
+            "pages":     max(1, -(-total // page_size)),
+        },
+    )
+
+
+def _paginate_list(request, items: list, serializer_class):
+    """
+    Same as _paginate but works on a plain Python list (e.g. pre-annotated results).
+    """
+    try:
+        page      = max(1, int(request.query_params.get("page", 1)))
+        page_size = min(100, max(1, int(request.query_params.get("page_size", 20))))
+    except (ValueError, TypeError):
+        page, page_size = 1, 20
+
+    total  = len(items)
+    start  = (page - 1) * page_size
+    end    = start + page_size
+    data   = serializer_class(items[start:end], many=True).data
+
+    return APIResponse.success(
+        data=data,
+        meta={
+            "total":     total,
+            "page":      page,
+            "page_size": page_size,
+            "pages":     max(1, -(-total // page_size)),
+        },
     )
 
 
@@ -317,7 +376,7 @@ class OwnerRegSubmitView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# Owner — Login & Branches
+# Owner — Login & Branch list (post-login selector)
 # ---------------------------------------------------------------------------
 
 class OwnerLoginView(APIView):
@@ -338,12 +397,12 @@ class OwnerLoginView(APIView):
         except InvalidCredentials as e:
             return _handle(e)
 
-        branches = OwnerAuthService.get_branches(user)
+        branches = OwnerAuthService.get_active_branches(user)
         return APIResponse.success(
             message="Logged in. Select a branch to continue.",
             data={
                 "user":     {"id": str(user.id), "full_name": user.full_name},
-                "branches": BranchSerializer(branches, many=True).data,
+                "branches": BranchLoginSerializer(branches, many=True).data,
                 "tokens":   tokens,
             },
         )
@@ -352,20 +411,20 @@ class OwnerLoginView(APIView):
 class OwnerBranchListView(APIView):
     """
     GET /api/v1/owner/branches/
-    Re-fetch branch list for branch switching.
+    Re-fetch active branch list (for branch switching after login).
     """
     permission_classes = [IsAuthenticated, IsOwner]
 
     def get(self, request):
-        branches = OwnerAuthService.get_branches(request.user)
+        branches = OwnerAuthService.get_active_branches(request.user)
         return APIResponse.success(
-            data=BranchSerializer(branches, many=True).data,
+            data=BranchLoginSerializer(branches, many=True).data,
             meta={"count": branches.count()},
         )
 
 
 # ---------------------------------------------------------------------------
-# Owner — Profile & Restaurant
+# Owner — Profile (personal info)
 # ---------------------------------------------------------------------------
 
 class OwnerProfileView(APIView):
@@ -386,11 +445,15 @@ class OwnerProfileView(APIView):
         return APIResponse.success(message="Profile updated.", data=s.data)
 
 
+# ---------------------------------------------------------------------------
+# Owner — Restaurant (brand / legal / address)
+# ---------------------------------------------------------------------------
+
 class OwnerRestaurantView(APIView):
     """
     GET   /api/v1/owner/restaurant/   — view restaurant info
     PATCH /api/v1/owner/restaurant/   — update brand, legal, address fields
-    Content-Type: multipart/form-data (supports file fields)
+    Content-Type: multipart/form-data (supports logo, cr_document, vat_certificate)
     """
     permission_classes = [IsAuthenticated, IsOwner]
 
@@ -399,20 +462,23 @@ class OwnerRestaurantView(APIView):
             restaurant = OwnerAuthService.get_restaurant(request.user)
         except NotFound as e:
             return _handle(e)
-        from apps.restaurants.serializers import RestaurantDetailSerializer
-        return APIResponse.success(data=RestaurantDetailSerializer(restaurant).data)
+        return APIResponse.success(data=RestaurantSerializer(restaurant).data)
 
     def patch(self, request):
-        s = RestaurantUpdateSerializer(data=request.data, partial=True)
+        try:
+            restaurant = OwnerAuthService.get_restaurant(request.user)
+        except NotFound as e:
+            return _handle(e)
+        s = RestaurantSerializer(restaurant, data=request.data, partial=True)
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
-        try:
-            restaurant = OwnerAuthService.update_restaurant(request.user, s.validated_data)
-        except (NotFound, AuthError) as e:
-            return _handle(e)
-        from apps.restaurants.serializers import RestaurantDetailSerializer
-        return APIResponse.success(message="Restaurant updated.", data=RestaurantDetailSerializer(restaurant).data)
+        s.save()
+        return APIResponse.success(message="Restaurant updated.", data=s.data)
 
+
+# ---------------------------------------------------------------------------
+# Owner — Bank Detail
+# ---------------------------------------------------------------------------
 
 class OwnerBankDetailView(APIView):
     """
@@ -426,33 +492,32 @@ class OwnerBankDetailView(APIView):
             restaurant = OwnerAuthService.get_restaurant(request.user)
         except NotFound as e:
             return _handle(e)
-        bank = restaurant.bank_detail
-        return APIResponse.success(data={
-            "bank_name":           bank.bank_name,
-            "account_holder_name": bank.account_holder_name,
-            "iban":                bank.iban,
-        })
+        return APIResponse.success(data=RestaurantBankDetailSerializer(restaurant.bank_detail).data)
 
     def patch(self, request):
-        s = BankDetailUpdateSerializer(data=request.data, partial=True)
+        try:
+            restaurant = OwnerAuthService.get_restaurant(request.user)
+        except NotFound as e:
+            return _handle(e)
+        s = RestaurantBankDetailSerializer(restaurant.bank_detail, data=request.data, partial=True)
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
-        try:
-            OwnerAuthService.update_bank_detail(request.user, s.validated_data)
-        except (NotFound, AuthError) as e:
-            return _handle(e)
+        s.save()
         return APIResponse.success(message="Bank details updated.")
 
 
+# ---------------------------------------------------------------------------
+# Owner — Branch management (all branches, including inactive)
+# ---------------------------------------------------------------------------
+
 class OwnerBranchManageView(APIView):
     """
-    GET  /api/v1/owner/restaurant/branches/       — list all branches (including inactive)
-    POST /api/v1/owner/restaurant/branches/       — add new branch
+    GET  /api/v1/owner/restaurant/branches/   — list all branches (including inactive)
+    POST /api/v1/owner/restaurant/branches/   — add new branch (starts inactive)
     """
     permission_classes = [IsAuthenticated, IsOwner]
 
     def get(self, request):
-        from apps.restaurants.models import Branch
         branches = (
             Branch.objects
             .filter(restaurant__owner=request.user)
@@ -481,8 +546,8 @@ class OwnerBranchManageView(APIView):
 
 class OwnerBranchDetailView(APIView):
     """
-    GET    /api/v1/owner/restaurant/branches/{id}/   — branch detail
-    PATCH  /api/v1/owner/restaurant/branches/{id}/   — update name, city, address, min_order
+    GET   /api/v1/owner/restaurant/branches/{id}/   — branch detail
+    PATCH /api/v1/owner/restaurant/branches/{id}/   — update name, city, address, min_order
     """
     permission_classes = [IsAuthenticated, IsOwner]
 
@@ -494,14 +559,22 @@ class OwnerBranchDetailView(APIView):
         return APIResponse.success(data=BranchDetailSerializer(branch).data)
 
     def patch(self, request, pk):
-        s = BranchUpdateSerializer(data=request.data, partial=True)
+        try:
+            branch = OwnerAuthService.get_branch(request.user, pk)
+        except NotFound as e:
+            return _handle(e)
+        s = BranchDetailSerializer(branch, data=request.data, partial=True)
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
+        s.save()
+        return APIResponse.success(message="Branch updated.", data=s.data)
+
+    def delete(self, request, pk):
         try:
-            branch = OwnerAuthService.update_branch(request.user, pk, s.validated_data)
+            OwnerAuthService.delete_branch(request.user, pk)
         except (NotFound, AuthError) as e:
             return _handle(e)
-        return APIResponse.success(message="Branch updated.", data=BranchDetailSerializer(branch).data)
+        return APIResponse.success(message="Branch deleted.")
 
 
 class OwnerBranchOpeningHoursView(APIView):
@@ -518,7 +591,7 @@ class OwnerBranchOpeningHoursView(APIView):
                 errors={"detail": ["Payload must be a JSON array of opening hours."]},
                 message="Invalid input.",
             )
-        s = OpeningHoursSerializer(data=request.data, many=True)
+        s = OpeningHoursWriteSerializer(data=request.data, many=True)
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         try:
@@ -646,7 +719,7 @@ class OwnerStaffDetailView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# Admin
+# Admin — Auth
 # ---------------------------------------------------------------------------
 
 class AdminLoginView(APIView):
@@ -744,11 +817,12 @@ class AdminProfileView(APIView):
         return APIResponse.success(message="Profile updated.", data=s.data)
 
 
+# ---------------------------------------------------------------------------
+# Admin — Restaurant & Branch Approvals
+# ---------------------------------------------------------------------------
+
 class AdminRestaurantApproveView(APIView):
-    """
-    POST /api/v1/admin/restaurants/{id}/approve/
-    Approve a pending restaurant and activate the owner account.
-    """
+    """POST /api/v1/admin/restaurants/{id}/approve/"""
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def post(self, request, pk):
@@ -760,26 +834,19 @@ class AdminRestaurantApproveView(APIView):
 
 
 class AdminRestaurantRejectView(APIView):
-    """
-    POST /api/v1/admin/restaurants/{id}/reject/
-    Body: { reason }  (optional)
-    """
+    """POST /api/v1/admin/restaurants/{id}/reject/  Body: { reason } (optional)"""
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def post(self, request, pk):
-        reason = request.data.get("reason", "")
         try:
-            AdminAuthService.reject_restaurant(pk, reason)
+            AdminAuthService.reject_restaurant(pk, reason=request.data.get("reason", ""))
         except (NotFound, AuthError) as e:
             return _handle(e)
         return APIResponse.success(message="Restaurant rejected.")
 
 
 class AdminBranchApproveView(APIView):
-    """
-    POST /api/v1/admin/branches/{id}/approve/
-    Activate a branch (mark is_active=True).
-    """
+    """POST /api/v1/admin/branches/{id}/approve/"""
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def post(self, request, pk):
@@ -791,10 +858,7 @@ class AdminBranchApproveView(APIView):
 
 
 class AdminBranchRejectView(APIView):
-    """
-    POST /api/v1/admin/branches/{id}/reject/
-    Deactivate a branch (mark is_active=False).
-    """
+    """POST /api/v1/admin/branches/{id}/reject/"""
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def post(self, request, pk):
@@ -826,3 +890,239 @@ class LogoutView(APIView):
         except TokenError as e:
             return APIResponse.error(errors={"refresh": [str(e)]}, message="Invalid token.")
         return APIResponse.success(message="Logged out successfully.")
+
+
+# ---------------------------------------------------------------------------
+# Admin — Customer management
+# ---------------------------------------------------------------------------
+
+class AdminCustomerListView(APIView):
+    """
+    GET /api/v1/admin/customers/
+    Query params: search, is_active (true|false), page, page_size
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        qs = AdminAuthService.list_customers(
+            search=request.query_params.get("search", ""),
+            is_active=request.query_params.get("is_active", ""),
+        )
+        return _paginate(request, qs, AdminCustomerListSerializer)
+
+
+class AdminCustomerDetailView(APIView):
+    """
+    GET    /api/v1/admin/customers/{id}/   — detail
+    PATCH  /api/v1/admin/customers/{id}/   — activate / deactivate  { is_active: bool }
+    DELETE /api/v1/admin/customers/{id}/   — hard delete
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request, pk):
+        try:
+            user = AdminAuthService.get_customer(pk)
+        except NotFound as e:
+            return _handle(e)
+        return APIResponse.success(data=AdminCustomerListSerializer(user).data)
+
+    def patch(self, request, pk):
+        is_active = request.data.get("is_active")
+        if is_active is None:
+            return APIResponse.error(errors={"is_active": ["This field is required."]})
+        try:
+            user = AdminAuthService.set_customer_active(pk, bool(is_active))
+        except NotFound as e:
+            return _handle(e)
+        return APIResponse.success(
+            message=f"Customer {'activated' if user.is_active else 'deactivated'}.",
+            data=AdminCustomerListSerializer(user).data,
+        )
+
+    def delete(self, request, pk):
+        try:
+            AdminAuthService.delete_customer(pk)
+        except NotFound as e:
+            return _handle(e)
+        return APIResponse.success(message="Customer deleted.")
+
+
+# ---------------------------------------------------------------------------
+# Admin — Owner management
+# ---------------------------------------------------------------------------
+
+class AdminOwnerListView(APIView):
+    """
+    GET /api/v1/admin/owners/
+    Query params: search, is_active (true|false), status (pending|approved|rejected),
+                  page, page_size
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        owners = AdminAuthService.list_owners(
+            search=request.query_params.get("search", ""),
+            is_active=request.query_params.get("is_active", ""),
+            status=request.query_params.get("status", ""),
+        )
+        return _paginate_list(request, owners, AdminOwnerListSerializer)
+
+
+class AdminOwnerDetailView(APIView):
+    """
+    GET    /api/v1/admin/owners/{id}/   — detail (owner + their restaurant snapshot)
+    PATCH  /api/v1/admin/owners/{id}/   — activate / deactivate  { is_active: bool }
+    DELETE /api/v1/admin/owners/{id}/   — hard delete (cascades to restaurant, branches, staff)
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request, pk):
+        try:
+            user = AdminAuthService.get_owner(pk)
+        except NotFound as e:
+            return _handle(e)
+        return APIResponse.success(data=AdminOwnerListSerializer(user).data)
+
+    def patch(self, request, pk):
+        is_active = request.data.get("is_active")
+        if is_active is None:
+            return APIResponse.error(errors={"is_active": ["This field is required."]})
+        try:
+            user = AdminAuthService.set_owner_active(pk, bool(is_active))
+        except NotFound as e:
+            return _handle(e)
+        return APIResponse.success(
+            message=f"Owner {'activated' if user.is_active else 'deactivated'}.",
+        )
+
+    def delete(self, request, pk):
+        try:
+            AdminAuthService.delete_owner(pk)
+        except NotFound as e:
+            return _handle(e)
+        return APIResponse.success(message="Owner and all associated data deleted.")
+
+
+# ---------------------------------------------------------------------------
+# Admin — Employee management (read-only + deactivate)
+# ---------------------------------------------------------------------------
+
+class AdminEmployeeListView(APIView):
+    """
+    GET /api/v1/admin/employees/
+    Query params: search, is_active (true|false), restaurant_id, page, page_size
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        qs = AdminAuthService.list_employees(
+            search=request.query_params.get("search", ""),
+            is_active=request.query_params.get("is_active", ""),
+            restaurant_id=request.query_params.get("restaurant_id", ""),
+        )
+        return _paginate(request, qs, AdminEmployeeListSerializer)
+
+
+class AdminEmployeeDetailView(APIView):
+    """
+    GET    /api/v1/admin/employees/{id}/   — detail
+    PATCH  /api/v1/admin/employees/{id}/   — activate / deactivate  { is_active: bool }
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def _get_employee(self, pk):
+        from apps.restaurants.models import Employee as Emp
+        try:
+            return Emp.objects.select_related("user", "branch", "branch__restaurant").get(id=pk)
+        except Emp.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        emp = self._get_employee(pk)
+        if not emp:
+            return APIResponse.error(message="Employee not found.", status_code=404)
+        return APIResponse.success(data=AdminEmployeeListSerializer(emp).data)
+
+    def patch(self, request, pk):
+        emp = self._get_employee(pk)
+        if not emp:
+            return APIResponse.error(message="Employee not found.", status_code=404)
+        is_active = request.data.get("is_active")
+        if is_active is None:
+            return APIResponse.error(errors={"is_active": ["This field is required."]})
+        emp.user.is_active = bool(is_active)
+        emp.user.save(update_fields=["is_active", "updated_at"])
+        return APIResponse.success(
+            message=f"Employee {'activated' if emp.user.is_active else 'deactivated'}.",
+            data=AdminEmployeeListSerializer(emp).data,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Admin — Restaurant management (list / detail — approve/reject already exist)
+# ---------------------------------------------------------------------------
+
+class AdminRestaurantListView(APIView):
+    """
+    GET /api/v1/admin/restaurants/
+    Query params: search, status (pending|approved|rejected), category, page, page_size
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        qs = AdminAuthService.list_restaurants(
+            search=request.query_params.get("search", ""),
+            status=request.query_params.get("status", ""),
+            category=request.query_params.get("category", ""),
+        )
+        return _paginate(request, qs, RestaurantListSerializer)
+
+
+class AdminRestaurantDetailView(APIView):
+    """
+    GET /api/v1/admin/restaurants/{id}/
+    Full restaurant detail including branches and bank info.
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request, pk):
+        try:
+            restaurant = AdminAuthService.get_restaurant(pk)
+        except NotFound as e:
+            return _handle(e)
+        return APIResponse.success(data=RestaurantSerializer(restaurant).data)
+
+
+# ---------------------------------------------------------------------------
+# Admin — Branch management (list / detail — approve/reject already exist)
+# ---------------------------------------------------------------------------
+
+class AdminBranchListView(APIView):
+    """
+    GET /api/v1/admin/branches/
+    Query params: search, is_active (true|false), restaurant_id, page, page_size
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        qs = AdminAuthService.list_branches(
+            search=request.query_params.get("search", ""),
+            is_active=request.query_params.get("is_active", ""),
+            restaurant_id=request.query_params.get("restaurant_id", ""),
+        )
+        return _paginate(request, qs, BranchListSerializer)
+
+
+class AdminBranchDetailView(APIView):
+    """
+    GET /api/v1/admin/branches/{id}/
+    Full branch detail including opening hours.
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request, pk):
+        try:
+            branch = AdminAuthService.get_branch(pk)
+        except NotFound as e:
+            return _handle(e)
+        return APIResponse.success(data=BranchDetailSerializer(branch).data)

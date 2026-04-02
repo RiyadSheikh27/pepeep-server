@@ -6,7 +6,7 @@ import random
 import logging
 from datetime import timedelta
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -229,7 +229,7 @@ class OwnerAuthService:
         return user, make_tokens(user)
 
     @staticmethod
-    def get_branches(user: User):
+    def get_active_branches(user: User):
         from apps.restaurants.models import Branch
         return (
             Branch.objects
@@ -314,25 +314,6 @@ class OwnerAuthService:
 
     @staticmethod
     @transaction.atomic
-    def update_restaurant(user: User, data: dict):
-        restaurant = OwnerAuthService.get_restaurant(user)
-        for field, value in data.items():
-            setattr(restaurant, field, value)
-        restaurant.save()
-        return restaurant
-
-    @staticmethod
-    @transaction.atomic
-    def update_bank_detail(user: User, data: dict):
-        restaurant = OwnerAuthService.get_restaurant(user)
-        bank = restaurant.bank_detail
-        for field, value in data.items():
-            setattr(bank, field, value)
-        bank.save()
-        return bank
-
-    @staticmethod
-    @transaction.atomic
     def add_branch(user: User, branch_data: dict):
         restaurant = OwnerAuthService.get_restaurant(user)
         branches   = _create_branches(restaurant, [branch_data])
@@ -368,6 +349,17 @@ class OwnerAuthService:
         BranchOpeningHours.objects.filter(branch=branch).delete()
         _create_opening_hours(branch, hours_list)
         return branch
+
+    @staticmethod
+    @transaction.atomic
+    def delete_branch(user: User, branch_id):
+        """Hard-delete a branch. Only allowed if the restaurant has more than one branch."""
+        from apps.restaurants.models import Branch
+        branch = OwnerAuthService.get_branch(user, branch_id)
+        remaining = Branch.objects.filter(restaurant=branch.restaurant).count()
+        if remaining <= 1:
+            raise AuthError("Cannot delete the only branch. A restaurant must have at least one branch.")
+        branch.delete()
 
 
 # ---------------------------------------------------------------------------
@@ -456,6 +448,174 @@ class AdminAuthService:
         branch.save(update_fields=["is_active", "updated_at"])
         log.info("Branch approved: id=%s", branch.id)
         return branch
+
+    # --- User management ----------------------------------------------------
+
+    @staticmethod
+    def list_customers(search: str = "", is_active: str = ""):
+        qs = User.objects.filter(role=User.Role.CUSTOMER).order_by("-created_at")
+        if search:
+            qs = qs.filter(
+                models.Q(phone__icontains=search) |
+                models.Q(full_name__icontains=search) |
+                models.Q(username__icontains=search)
+            )
+        if is_active in ("true", "false"):
+            qs = qs.filter(is_active=(is_active == "true"))
+        return qs
+
+    @staticmethod
+    def get_customer(customer_id) -> User:
+        try:
+            return User.objects.get(id=customer_id, role=User.Role.CUSTOMER)
+        except User.DoesNotExist:
+            raise NotFound("Customer not found.")
+
+    @staticmethod
+    @transaction.atomic
+    def set_customer_active(customer_id, is_active: bool) -> User:
+        user = AdminAuthService.get_customer(customer_id)
+        user.is_active = is_active
+        user.save(update_fields=["is_active", "updated_at"])
+        return user
+
+    @staticmethod
+    @transaction.atomic
+    def delete_customer(customer_id):
+        user = AdminAuthService.get_customer(customer_id)
+        user.delete()
+
+    @staticmethod
+    def list_owners(search: str = "", is_active: str = "", status: str = "") -> list:
+        """
+        Returns a plain list of User objects with ._restaurant attached.
+        Returns a list (not a queryset) so pagination works correctly
+        after the restaurant annotation step.
+        """
+        from apps.restaurants.models import Restaurant
+        qs = User.objects.filter(role=User.Role.OWNER).order_by("-created_at")
+        if search:
+            qs = qs.filter(
+                models.Q(phone__icontains=search) |
+                models.Q(full_name__icontains=search)
+            )
+        if is_active in ("true", "false"):
+            qs = qs.filter(is_active=(is_active == "true"))
+        if status in [s for s, _ in Restaurant.Status.choices]:
+            qs = qs.filter(restaurants__status=status)
+
+        # Evaluate once, then attach restaurant in a single extra query
+        users = list(qs)
+        restaurant_map = {
+            r.owner_id: r
+            for r in Restaurant.objects.filter(owner__in=users).only("owner_id", "brand_name", "status")
+        }
+        for user in users:
+            user._restaurant = restaurant_map.get(user.id)
+        return users
+
+    @staticmethod
+    def get_owner(owner_id) -> User:
+        from apps.restaurants.models import Restaurant
+        try:
+            user = User.objects.get(id=owner_id, role=User.Role.OWNER)
+        except User.DoesNotExist:
+            raise NotFound("Owner not found.")
+        user._restaurant = Restaurant.objects.filter(owner=user).only("owner_id", "brand_name", "status").first()
+        return user
+
+    @staticmethod
+    @transaction.atomic
+    def set_owner_active(owner_id, is_active: bool) -> User:
+        user = AdminAuthService.get_owner(owner_id)
+        user.is_active = is_active
+        user.save(update_fields=["is_active", "updated_at"])
+        return user
+
+    @staticmethod
+    @transaction.atomic
+    def delete_owner(owner_id):
+        user = AdminAuthService.get_owner(owner_id)
+        user.delete()
+
+    @staticmethod
+    def list_employees(search: str = "", is_active: str = "", restaurant_id: str = ""):
+        from apps.restaurants.models import Employee as Emp
+        qs = (
+            Emp.objects
+            .select_related("user", "branch", "branch__restaurant")
+            .order_by("-created_at")
+        )
+        if search:
+            qs = qs.filter(
+                models.Q(user__username__icontains=search) |
+                models.Q(user__phone__icontains=search)
+            )
+        if is_active in ("true", "false"):
+            qs = qs.filter(user__is_active=(is_active == "true"))
+        if restaurant_id:
+            qs = qs.filter(branch__restaurant_id=restaurant_id)
+        return qs
+
+    # --- Restaurant / Branch management ------------------------------------
+
+    @staticmethod
+    def list_restaurants(search: str = "", status: str = "", category: str = ""):
+        from apps.restaurants.models import Restaurant
+        qs = Restaurant.objects.select_related("owner").order_by("-created_at")
+        if search:
+            qs = qs.filter(
+                models.Q(brand_name__icontains=search) |
+                models.Q(legal_name__icontains=search) |
+                models.Q(owner__phone__icontains=search)
+            )
+        if status:
+            qs = qs.filter(status=status)
+        if category:
+            qs = qs.filter(category=category)
+        return qs
+
+    @staticmethod
+    def get_restaurant(restaurant_id):
+        from apps.restaurants.models import Restaurant
+        try:
+            return (
+                Restaurant.objects
+                .select_related("owner", "bank_detail")
+                .prefetch_related("branches__opening_hours")
+                .get(id=restaurant_id)
+            )
+        except Restaurant.DoesNotExist:
+            raise NotFound("Restaurant not found.")
+
+    @staticmethod
+    def list_branches(search: str = "", is_active: str = "", restaurant_id: str = ""):
+        from apps.restaurants.models import Branch
+        qs = Branch.objects.select_related("restaurant").prefetch_related("opening_hours").order_by("-created_at")
+        if search:
+            qs = qs.filter(
+                models.Q(name__icontains=search) |
+                models.Q(city__icontains=search) |
+                models.Q(restaurant__brand_name__icontains=search)
+            )
+        if is_active in ("true", "false"):
+            qs = qs.filter(is_active=(is_active == "true"))
+        if restaurant_id:
+            qs = qs.filter(restaurant_id=restaurant_id)
+        return qs
+
+    @staticmethod
+    def get_branch(branch_id):
+        from apps.restaurants.models import Branch
+        try:
+            return (
+                Branch.objects
+                .select_related("restaurant")
+                .prefetch_related("opening_hours")
+                .get(id=branch_id)
+            )
+        except Branch.DoesNotExist:
+            raise NotFound("Branch not found.")
 
     @staticmethod
     @transaction.atomic

@@ -1,7 +1,11 @@
 from rest_framework import serializers
 
 from apps.utils.validators import validate_sa_phone
-from apps.restaurants.models import Branch, Employee, BranchOpeningHours
+from apps.restaurants.models import Branch, Employee, Restaurant, RestaurantBankDetail
+from apps.restaurants.serializers import (
+    RestaurantSerializer, RestaurantBankDetailSerializer,
+    BranchDetailSerializer,
+)
 from .models import User
 
 
@@ -39,7 +43,7 @@ class CustomerOTPVerifySerializer(PhoneSerializer, OTPCodeMixin):
 
 class CustomerProfileSerializer(serializers.ModelSerializer):
     class Meta:
-        model = User
+        model  = User
         fields = ["id", "full_name", "username", "email", "phone", "avatar", "created_at"]
         read_only_fields = ["id", "phone", "created_at"]
 
@@ -81,7 +85,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(source="branch.name", read_only=True)
 
     class Meta:
-        model = Employee
+        model  = Employee
         fields = ["id", "username", "phone", "is_active", "branch_name", "permissions", "created_at"]
         read_only_fields = ["id", "created_at"]
 
@@ -119,8 +123,8 @@ class OwnerLoginSerializer(serializers.Serializer):
         return v.replace(" ", "")
 
 
-class BranchSerializer(serializers.ModelSerializer):
-    """Lightweight — used in login response branch list."""
+class BranchLoginSerializer(serializers.ModelSerializer):
+    """Lightweight branch list returned on owner login."""
     restaurant_name = serializers.CharField(source="restaurant.brand_name", read_only=True)
 
     class Meta:
@@ -129,7 +133,7 @@ class BranchSerializer(serializers.ModelSerializer):
 
 
 # ---------------------------------------------------------------------------
-# Opening Hours (shared between registration and owner profile update)
+# Opening Hours write serializers (input/validation only — no model backing)
 # ---------------------------------------------------------------------------
 
 class ShiftSerializer(serializers.Serializer):
@@ -146,7 +150,7 @@ class ShiftSerializer(serializers.Serializer):
         return {"open": fmt(instance["open"]), "close": fmt(instance["close"])}
 
 
-class OpeningHoursSerializer(serializers.Serializer):
+class OpeningHoursWriteSerializer(serializers.Serializer):
     DAY_CHOICES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
     day     = serializers.ChoiceField(choices=[(d, d.capitalize()) for d in DAY_CHOICES])
@@ -161,18 +165,13 @@ class OpeningHoursSerializer(serializers.Serializer):
         return attrs
 
 
-class OpeningHoursReadSerializer(serializers.ModelSerializer):
-    class Meta:
-        model  = BranchOpeningHours
-        fields = ["id", "day", "is_open", "shifts"]
-
-
 class BranchCreateSerializer(serializers.Serializer):
+    """Write-only: used for registration and adding new branches."""
     name          = serializers.CharField(max_length=200)
     city          = serializers.CharField(max_length=100)
     full_address  = serializers.CharField(max_length=300)
     min_order     = serializers.DecimalField(max_digits=8, decimal_places=2)
-    opening_hours = OpeningHoursSerializer(many=True, required=False, default=list)
+    opening_hours = OpeningHoursWriteSerializer(many=True, required=False, default=list)
 
     def validate_opening_hours(self, hours):
         days = [h["day"] for h in hours]
@@ -184,19 +183,6 @@ class BranchCreateSerializer(serializers.Serializer):
 # ---------------------------------------------------------------------------
 # Owner — Registration
 # ---------------------------------------------------------------------------
-
-CATEGORY_CHOICES = [
-    ("fast_food", "Fast Food"), ("casual", "Casual Dining"), ("fine_dining", "Fine Dining"),
-    ("cafe", "Café"), ("bakery", "Bakery"), ("pizza", "Pizza"),
-    ("sushi", "Sushi"), ("shawarma", "Shawarma"), ("seafood", "Seafood"), ("other", "Other"),
-]
-
-BANK_CHOICES = [
-    ("al_rajhi", "Al Rajhi Bank"), ("snb", "Saudi National Bank"), ("riyad", "Riyad Bank"),
-    ("samba", "Samba Financial Group"), ("alinma", "Alinma Bank"), ("bsf", "Banque Saudi Fransi"),
-    ("arab", "Arab National Bank"), ("sib", "Saudi Investment Bank"), ("other", "Other"),
-]
-
 
 class OwnerRegSubmitSerializer(serializers.Serializer):
     """
@@ -215,7 +201,7 @@ class OwnerRegSubmitSerializer(serializers.Serializer):
     # Step 2 — restaurant brand
     legal_name        = serializers.CharField(max_length=200)
     brand_name        = serializers.CharField(max_length=200)
-    category          = serializers.ChoiceField(choices=CATEGORY_CHOICES)
+    category          = serializers.ChoiceField(choices=Restaurant.Category.choices)
     logo              = serializers.ImageField(required=False, allow_null=True)
     short_description = serializers.CharField(max_length=500, required=False, allow_blank=True)
 
@@ -237,7 +223,7 @@ class OwnerRegSubmitSerializer(serializers.Serializer):
     country                   = serializers.CharField(max_length=100, default="Saudi Arabia")
 
     # Step 4 — bank
-    bank_name           = serializers.ChoiceField(choices=BANK_CHOICES)
+    bank_name           = serializers.ChoiceField(choices=RestaurantBankDetail.BankName.choices)
     account_holder_name = serializers.CharField(max_length=200)
     iban                = serializers.CharField(max_length=34)
     bank_iban_pdf       = serializers.FileField()
@@ -253,71 +239,14 @@ class OwnerRegSubmitSerializer(serializers.Serializer):
 
 
 # ---------------------------------------------------------------------------
-# Owner — Profile & Restaurant Update
+# Owner — Profile
 # ---------------------------------------------------------------------------
 
 class OwnerProfileSerializer(serializers.ModelSerializer):
-    """Read/update owner's personal info (full_name, email, avatar)."""
     class Meta:
         model  = User
         fields = ["id", "full_name", "email", "phone", "avatar", "created_at"]
         read_only_fields = ["id", "phone", "created_at"]
-
-
-class RestaurantUpdateSerializer(serializers.Serializer):
-    """Partial update for restaurant brand + legal + address info."""
-    # Brand
-    brand_name        = serializers.CharField(max_length=200, required=False)
-    category          = serializers.ChoiceField(choices=CATEGORY_CHOICES, required=False)
-    logo              = serializers.ImageField(required=False, allow_null=True)
-    short_description = serializers.CharField(max_length=500, required=False, allow_blank=True)
-
-    # Legal
-    cr_number       = serializers.CharField(max_length=20, required=False)
-    vat_number      = serializers.CharField(max_length=20, required=False)
-    cr_document     = serializers.FileField(required=False, allow_null=True)
-    vat_certificate = serializers.FileField(required=False, allow_null=True)
-
-    # Address
-    short_address             = serializers.CharField(max_length=200, required=False, allow_blank=True)
-    street_name               = serializers.CharField(max_length=200, required=False)
-    building_number           = serializers.CharField(max_length=20, required=False)
-    building_secondary_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    district                  = serializers.CharField(max_length=100, required=False)
-    postal_code               = serializers.CharField(max_length=10, required=False)
-    unit_number               = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    city                      = serializers.CharField(max_length=100, required=False)
-    country                   = serializers.CharField(max_length=100, required=False)
-
-
-class BankDetailUpdateSerializer(serializers.Serializer):
-    bank_name           = serializers.ChoiceField(choices=BANK_CHOICES, required=False)
-    account_holder_name = serializers.CharField(max_length=200, required=False)
-    iban                = serializers.CharField(max_length=34, required=False)
-    bank_iban_pdf       = serializers.FileField(required=False, allow_null=True)
-
-    def validate_iban(self, v):
-        v = v.replace(" ", "").upper()
-        if not v.startswith("SA") or len(v) != 24:
-            raise serializers.ValidationError("Must be a valid Saudi IBAN (SA + 22 digits).")
-        return v
-
-
-class BranchDetailSerializer(serializers.ModelSerializer):
-    opening_hours = OpeningHoursReadSerializer(many=True, read_only=True)
-    is_active     = serializers.BooleanField(read_only=True)
-
-    class Meta:
-        model  = Branch
-        fields = ["id", "name", "city", "full_address", "min_order", "is_active", "opening_hours"]
-
-
-class BranchUpdateSerializer(serializers.Serializer):
-    """Partial update for an existing branch (name, city, address, min_order)."""
-    name         = serializers.CharField(max_length=200, required=False)
-    city         = serializers.CharField(max_length=100, required=False)
-    full_address = serializers.CharField(max_length=300, required=False)
-    min_order    = serializers.DecimalField(max_digits=8, decimal_places=2, required=False)
 
 
 # ---------------------------------------------------------------------------
@@ -363,3 +292,72 @@ class AdminProfileSerializer(serializers.ModelSerializer):
         if qs.exists():
             raise serializers.ValidationError("Phone number already in use.")
         return v
+
+
+# ---------------------------------------------------------------------------
+# Re-export restaurant serializers used in auth views
+# (imported here so views only need to import from .serializers)
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    # auth-owned
+    "PhoneSerializer", "OTPCodeMixin",
+    "CustomerOTPSendSerializer", "CustomerOTPVerifySerializer",
+    "CustomerProfileSerializer", "ChangePhoneRequestSerializer", "ChangePhoneVerifySerializer",
+    "EmployeeLoginSerializer", "EmployeeDetailSerializer", "CreateEmployeeSerializer",
+    "OwnerLoginSerializer", "BranchLoginSerializer",
+    "ShiftSerializer", "OpeningHoursWriteSerializer",
+    "BranchCreateSerializer", "OwnerRegSubmitSerializer", "OwnerProfileSerializer",
+    "AdminLoginSerializer", "AdminForgotPasswordSerializer",
+    "AdminResetPasswordSerializer", "AdminProfileSerializer",
+    # re-exported from restaurants
+    "RestaurantSerializer", "RestaurantBankDetailSerializer", "BranchDetailSerializer",
+]
+
+
+# ---------------------------------------------------------------------------
+# Admin — List serializers (read-only, flat representations)
+# ---------------------------------------------------------------------------
+
+class AdminCustomerListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = User
+        fields = ["id", "full_name", "username", "phone", "email", "avatar", "is_active", "created_at"]
+        read_only_fields = fields
+
+
+class AdminOwnerListSerializer(serializers.ModelSerializer):
+    restaurant_name   = serializers.SerializerMethodField()
+    restaurant_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = User
+        fields = [
+            "id", "full_name", "phone", "email", "avatar",
+            "is_active", "restaurant_name", "restaurant_status", "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_restaurant_name(self, obj):
+        r = getattr(obj, "_restaurant", None)
+        return r.brand_name if r else None
+
+    def get_restaurant_status(self, obj):
+        r = getattr(obj, "_restaurant", None)
+        return r.status if r else None
+
+
+class AdminEmployeeListSerializer(serializers.ModelSerializer):
+    username        = serializers.CharField(source="user.username")
+    phone           = serializers.CharField(source="user.phone")
+    is_active       = serializers.BooleanField(source="user.is_active")
+    branch_name     = serializers.CharField(source="branch.name")
+    restaurant_name = serializers.CharField(source="branch.restaurant.brand_name")
+
+    class Meta:
+        model  = Employee
+        fields = [
+            "id", "username", "phone", "is_active",
+            "branch_name", "restaurant_name", "permissions", "created_at",
+        ]
+        read_only_fields = fields

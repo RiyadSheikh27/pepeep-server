@@ -22,6 +22,16 @@ from apps.authentication.views import (
     # Admin — approvals
     AdminRestaurantApproveView, AdminRestaurantRejectView,
     AdminBranchApproveView, AdminBranchRejectView,
+    # Admin — customers
+    AdminCustomerListView, AdminCustomerDetailView,
+    # Admin — owners
+    AdminOwnerListView, AdminOwnerDetailView,
+    # Admin — employees
+    AdminEmployeeListView, AdminEmployeeDetailView,
+    # Admin — restaurants
+    AdminRestaurantListView, AdminRestaurantDetailView,
+    # Admin — branches
+    AdminBranchListView, AdminBranchDetailView,
     # Shared
     LogoutView,
 )
@@ -66,11 +76,29 @@ urlpatterns = [
     path("admin/auth/reset-password/",          AdminResetPasswordView.as_view()),
     path("admin/profile/",                      AdminProfileView.as_view()),
 
-    # ── Admin — Approvals ─────────────────────────────────────────────────────
+    # ── Admin — Customers ─────────────────────────────────────────────────────
+    path("admin/customers/",                    AdminCustomerListView.as_view()),
+    path("admin/customers/<uuid:pk>/",          AdminCustomerDetailView.as_view()),
+
+    # ── Admin — Owners ────────────────────────────────────────────────────────
+    path("admin/owners/",                       AdminOwnerListView.as_view()),
+    path("admin/owners/<uuid:pk>/",             AdminOwnerDetailView.as_view()),
+
+    # ── Admin — Employees ─────────────────────────────────────────────────────
+    path("admin/employees/",                    AdminEmployeeListView.as_view()),
+    path("admin/employees/<uuid:pk>/",          AdminEmployeeDetailView.as_view()),
+
+    # ── Admin — Restaurants ───────────────────────────────────────────────────
+    path("admin/restaurants/",                  AdminRestaurantListView.as_view()),
+    path("admin/restaurants/<uuid:pk>/",        AdminRestaurantDetailView.as_view()),
     path("admin/restaurants/<uuid:pk>/approve/", AdminRestaurantApproveView.as_view()),
     path("admin/restaurants/<uuid:pk>/reject/",  AdminRestaurantRejectView.as_view()),
-    path("admin/branches/<uuid:pk>/approve/",    AdminBranchApproveView.as_view()),
-    path("admin/branches/<uuid:pk>/reject/",     AdminBranchRejectView.as_view()),
+
+    # ── Admin — Branches ──────────────────────────────────────────────────────
+    path("admin/branches/",                     AdminBranchListView.as_view()),
+    path("admin/branches/<uuid:pk>/",           AdminBranchDetailView.as_view()),
+    path("admin/branches/<uuid:pk>/approve/",   AdminBranchApproveView.as_view()),
+    path("admin/branches/<uuid:pk>/reject/",    AdminBranchRejectView.as_view()),
 
     # ── Shared ────────────────────────────────────────────────────────────────
     path("auth/logout/",                        LogoutView.as_view()),
