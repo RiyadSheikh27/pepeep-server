@@ -17,18 +17,18 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         OWNER    = "owner",    "Owner"
         ADMIN    = "admin",    "Admin"
 
-    phone     = models.CharField(max_length=20, unique=True, null=True, blank=True, validators=[validate_sa_phone])
-    username  = models.CharField(max_length=50, unique=True, null=True, blank=True)
-    email     = models.EmailField(null=True, blank=True)
+    phone = models.CharField(max_length=20, unique=True, null=True, blank=True, validators=[validate_sa_phone])
+    username = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    email = models.EmailField(null=True, blank=True)
     full_name = models.CharField(max_length=150, blank=True, default="")
-    avatar    = models.ImageField(upload_to="avatars/%Y/%m/", null=True, blank=True)
+    avatar = models.ImageField(upload_to="avatars/%Y/%m/", null=True, blank=True)
 
-    role              = models.CharField(max_length=20, choices=Role.choices, db_index=True)
-    is_active         = models.BooleanField(default=True)
-    is_staff          = models.BooleanField(default=False)
+    role = models.CharField(max_length=20, choices=Role.choices, db_index=True)
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
     is_phone_verified = models.BooleanField(default=False)
 
-    USERNAME_FIELD  = "phone"
+    USERNAME_FIELD = "phone"
     REQUIRED_FIELDS = []
 
     objects = UserManager()
@@ -49,8 +49,8 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
 class OTPVerification(TimeStampedModel):
 
     class Purpose(models.TextChoices):
-        LOGIN          = "login",          "Login"
-        CHANGE_PHONE   = "change_phone",   "Change Phone"
+        LOGIN = "login", "Login"
+        CHANGE_PHONE = "change_phone", "Change Phone"
         PASSWORD_RESET = "password_reset", "Password Reset"
         OWNER_REGISTER = "owner_register", "Owner Register"
 
@@ -59,13 +59,13 @@ class OTPVerification(TimeStampedModel):
     RESEND_COOLDOWN = 60    # 1 min between sends
     MAX_SENDS_HOUR  = 5
 
-    phone              = models.CharField(max_length=20, db_index=True)
-    otp_code           = models.CharField(max_length=6)
-    purpose            = models.CharField(max_length=20, choices=Purpose.choices)
-    attempts           = models.PositiveSmallIntegerField(default=0)
-    is_verified        = models.BooleanField(default=False)
-    is_used            = models.BooleanField(default=False, db_index=True)
-    expires_at         = models.DateTimeField()
+    phone = models.CharField(max_length=20, db_index=True)
+    otp_code = models.CharField(max_length=6)
+    purpose = models.CharField(max_length=20, choices=Purpose.choices)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    is_verified = models.BooleanField(default=False)
+    is_used = models.BooleanField(default=False, db_index=True)
+    expires_at = models.DateTimeField()
     verification_token = models.CharField(
         max_length=64, unique=True, null=True, blank=True, db_index=True,
         help_text="Short-lived token returned after successful OTP verify.",

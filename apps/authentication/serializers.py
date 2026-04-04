@@ -58,7 +58,7 @@ class ChangePhoneRequestSerializer(PhoneSerializer):
 
 
 class ChangePhoneVerifySerializer(OTPCodeMixin):
-    new_phone                = serializers.CharField(max_length=20, validators=[validate_sa_phone])
+    new_phone = serializers.CharField(max_length=20, validators=[validate_sa_phone])
     phone_verification_token = serializers.CharField()
 
     def validate_new_phone(self, v):
@@ -73,9 +73,9 @@ class EmployeeLoginSerializer(serializers.Serializer):
 
 
 class EmployeeDetailSerializer(serializers.ModelSerializer):
-    username    = serializers.CharField(source="user.username")
-    phone       = serializers.CharField(source="user.phone")
-    is_active   = serializers.BooleanField(source="user.is_active")
+    username = serializers.CharField(source="user.username")
+    phone = serializers.CharField(source="user.phone")
+    is_active = serializers.BooleanField(source="user.is_active")
     branch_name = serializers.CharField(source="branch.name", read_only=True)
 
     class Meta:
@@ -85,10 +85,10 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
 
 
 class CreateEmployeeSerializer(serializers.Serializer):
-    username    = serializers.CharField(max_length=50)
-    phone       = serializers.CharField(max_length=20, validators=[validate_sa_phone], required=False, allow_blank=True)
-    password    = serializers.CharField(write_only=True, min_length=6)
-    branch_id   = serializers.UUIDField()
+    username = serializers.CharField(max_length=50)
+    phone = serializers.CharField(max_length=20, validators=[validate_sa_phone], required=False, allow_blank=True)
+    password = serializers.CharField(write_only=True, min_length=6)
+    branch_id = serializers.UUIDField()
     permissions = serializers.MultipleChoiceField(choices=Employee.ALL_PERMISSIONS, default=list)
 
     def validate_username(self, v):
@@ -108,7 +108,7 @@ class CreateEmployeeSerializer(serializers.Serializer):
 # --- Owner — Auth ------------------------------------------------------------------
 
 class OwnerLoginSerializer(serializers.Serializer):
-    phone    = serializers.CharField(max_length=20, validators=[validate_sa_phone])
+    phone = serializers.CharField(max_length=20, validators=[validate_sa_phone])
     password = serializers.CharField(write_only=True)
 
     def validate_phone(self, v):
@@ -127,7 +127,7 @@ class BranchLoginSerializer(serializers.ModelSerializer):
 # --- Opening Hours write serializers (input/validation only -- no model backing)-----------------
 
 class ShiftSerializer(serializers.Serializer):
-    open  = serializers.TimeField(format="%H:%M", input_formats=["%H:%M"])
+    open = serializers.TimeField(format="%H:%M", input_formats=["%H:%M"])
     close = serializers.TimeField(format="%H:%M", input_formats=["%H:%M"])
 
     def validate(self, attrs):
@@ -143,9 +143,9 @@ class ShiftSerializer(serializers.Serializer):
 class OpeningHoursWriteSerializer(serializers.Serializer):
     DAY_CHOICES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
-    day     = serializers.ChoiceField(choices=[(d, d.capitalize()) for d in DAY_CHOICES])
+    day = serializers.ChoiceField(choices=[(d, d.capitalize()) for d in DAY_CHOICES])
     is_open = serializers.BooleanField(default=True)
-    shifts  = ShiftSerializer(many=True, required=False, default=list)
+    shifts = ShiftSerializer(many=True, required=False, default=list)
 
     def validate(self, attrs):
         if attrs.get("is_open") and not attrs.get("shifts"):
@@ -157,10 +157,10 @@ class OpeningHoursWriteSerializer(serializers.Serializer):
 
 class BranchCreateSerializer(serializers.Serializer):
     """Write-only: used for registration and adding new branches."""
-    name          = serializers.CharField(max_length=200)
-    city          = serializers.CharField(max_length=100)
-    full_address  = serializers.CharField(max_length=300)
-    min_order     = serializers.DecimalField(max_digits=8, decimal_places=2)
+    name = serializers.CharField(max_length=200)
+    city = serializers.CharField(max_length=100)
+    full_address = serializers.CharField(max_length=300)
+    min_order = serializers.DecimalField(max_digits=8, decimal_places=2)
     opening_hours = OpeningHoursWriteSerializer(many=True, required=False, default=list)
 
     def validate_opening_hours(self, hours):
@@ -180,35 +180,35 @@ class OwnerRegSubmitSerializer(serializers.Serializer):
     validated separately in the view using BranchCreateSerializer.
     """
     # Step 1 — owner info
-    full_name                = serializers.CharField(max_length=150)
-    phone                    = serializers.CharField(max_length=20, validators=[validate_sa_phone])
-    email                    = serializers.EmailField()
-    password                 = serializers.CharField(write_only=True, min_length=8)
+    full_name = serializers.CharField(max_length=150)
+    phone = serializers.CharField(max_length=20, validators=[validate_sa_phone])
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True, min_length=8)
     phone_verification_token = serializers.CharField()
 
-    # Step 2 — restaurant brand
+    # Step 2 - restaurant brand
     legal_name        = serializers.CharField(max_length=200)
     brand_name        = serializers.CharField(max_length=200)
     category          = serializers.ChoiceField(choices=Restaurant.Category.choices)
     logo              = serializers.ImageField(required=False, allow_null=True)
     short_description = serializers.CharField(max_length=500, required=False, allow_blank=True)
 
-    # Step 3 — legal
-    cr_number       = serializers.CharField(max_length=20)
-    vat_number      = serializers.CharField(max_length=20)
-    cr_document     = serializers.FileField()
+    # Step 3 - legal
+    cr_number = serializers.CharField(max_length=20)
+    vat_number = serializers.CharField(max_length=20)
+    cr_document = serializers.FileField()
     vat_certificate = serializers.FileField()
 
-    # Step 3 — address
-    short_address             = serializers.CharField(max_length=200, required=False, allow_blank=True)
-    street_name               = serializers.CharField(max_length=200)
-    building_number           = serializers.CharField(max_length=20)
+    # Step 3 - address
+    short_address = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    street_name = serializers.CharField(max_length=200)
+    building_number = serializers.CharField(max_length=20)
     building_secondary_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    district                  = serializers.CharField(max_length=100)
-    postal_code               = serializers.CharField(max_length=10)
-    unit_number               = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    city                      = serializers.CharField(max_length=100)
-    country                   = serializers.CharField(max_length=100, default="Saudi Arabia")
+    district = serializers.CharField(max_length=100)
+    postal_code = serializers.CharField(max_length=10)
+    unit_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    city = serializers.CharField(max_length=100)
+    country = serializers.CharField(max_length=100, default="Saudi Arabia")
 
     # Step 4 — bank
     bank_name           = serializers.ChoiceField(choices=RestaurantBankDetail.BankName.choices)

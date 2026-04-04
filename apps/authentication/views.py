@@ -58,23 +58,23 @@ def _paginate(request, qs, serializer_class):
     Query params: page (default 1), page_size (default 20, max 100).
     """
     try:
-        page      = max(1, int(request.query_params.get("page", 1)))
+        page = max(1, int(request.query_params.get("page", 1)))
         page_size = min(100, max(1, int(request.query_params.get("page_size", 20))))
     except (ValueError, TypeError):
         page, page_size = 1, 20
 
-    total  = qs.count()
-    start  = (page - 1) * page_size
-    end    = start + page_size
-    data   = serializer_class(qs[start:end], many=True).data
+    total = qs.count()
+    start = (page - 1) * page_size
+    end = start + page_size
+    data = serializer_class(qs[start:end], many=True).data
 
     return APIResponse.success(
         data=data,
         meta={
-            "total":     total,
-            "page":      page,
+            "total": total,
+            "page": page,
             "page_size": page_size,
-            "pages":     max(1, -(-total // page_size)),
+            "pages": max(1, -(-total // page_size)),
         },
     )
 
@@ -84,23 +84,23 @@ def _paginate_list(request, items: list, serializer_class):
     Same as _paginate but works on a plain Python list (e.g. pre-annotated results).
     """
     try:
-        page      = max(1, int(request.query_params.get("page", 1)))
+        page = max(1, int(request.query_params.get("page", 1)))
         page_size = min(100, max(1, int(request.query_params.get("page_size", 20))))
     except (ValueError, TypeError):
         page, page_size = 1, 20
 
-    total  = len(items)
-    start  = (page - 1) * page_size
-    end    = start + page_size
-    data   = serializer_class(items[start:end], many=True).data
+    total = len(items)
+    start = (page - 1) * page_size
+    end = start + page_size
+    data = serializer_class(items[start:end], many=True).data
 
     return APIResponse.success(
         data=data,
         meta={
-            "total":     total,
-            "page":      page,
+            "total": total,
+            "page": page,
             "page_size": page_size,
-            "pages":     max(1, -(-total // page_size)),
+            "pages": max(1, -(-total // page_size)),
         },
     )
 
@@ -244,7 +244,7 @@ class CustomerChangePhoneVerifyView(APIView):
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         d = s.validated_data
         try:
-            otp  = OTPService.verify(d["new_phone"], d["otp_code"], OTPVerification.Purpose.CHANGE_PHONE)
+            otp = OTPService.verify(d["new_phone"], d["otp_code"], OTPVerification.Purpose.CHANGE_PHONE)
             user = CustomerAuthService.change_phone(request.user, d["new_phone"], otp.verification_token)
         except (OTPExpired, OTPInvalid, OTPMaxAttempts, InvalidToken, AuthError) as e:
             return _handle(e)
@@ -279,17 +279,17 @@ class EmployeeLoginView(APIView):
             message="Logged in successfully.",
             data={
                 "user": {
-                    "id":        str(user.id),
-                    "username":  user.username,
+                    "id": str(user.id),
+                    "username": user.username,
                     "full_name": user.full_name,
                 },
                 "branch": {
-                    "id":              str(emp.branch.id),
-                    "name":            emp.branch.name,
+                    "id": str(emp.branch.id),
+                    "name": emp.branch.name,
                     "restaurant_name": emp.branch.restaurant.brand_name,
                 },
                 "permissions": emp.permissions,
-                "tokens":      tokens,
+                "tokens": tokens,
             },
         )
 
@@ -322,7 +322,7 @@ class OwnerRegOTPVerifyView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        phone    = request.data.get("phone", "").replace(" ", "")
+        phone = request.data.get("phone", "").replace(" ", "")
         otp_code = request.data.get("otp_code", "")
         if not phone or not otp_code:
             return APIResponse.error(
@@ -391,9 +391,9 @@ class OwnerLoginView(APIView):
         return APIResponse.success(
             message="Logged in. Select a branch to continue.",
             data={
-                "user":     {"id": str(user.id), "full_name": user.full_name},
+                "user": {"id": str(user.id), "full_name": user.full_name},
                 "branches": BranchLoginSerializer(branches, many=True).data,
-                "tokens":   tokens,
+                "tokens": tokens,
             },
         )
 
@@ -417,8 +417,8 @@ class OwnerBranchListView(APIView):
 
 class OwnerProfileView(APIView):
     """
-    GET   /api/v1/owner/profile/   — view personal info
-    PATCH /api/v1/owner/profile/   — update full_name, email, avatar
+    GET /api/v1/owner/profile/ — view personal info
+    PATCH /api/v1/owner/profile/ — update full_name, email, avatar
     """
     permission_classes = [IsAuthenticated, IsOwner]
 
@@ -467,8 +467,8 @@ class OwnerRestaurantView(APIView):
 
 class OwnerBankDetailView(APIView):
     """
-    GET   /api/v1/owner/restaurant/bank/   — view bank details
-    PATCH /api/v1/owner/restaurant/bank/   — update bank details
+    GET /api/v1/owner/restaurant/bank/ — view bank details
+    PATCH /api/v1/owner/restaurant/bank/ — update bank details
     """
     permission_classes = [IsAuthenticated, IsOwner]
 
@@ -496,8 +496,8 @@ class OwnerBankDetailView(APIView):
 
 class OwnerBranchManageView(APIView):
     """
-    GET  /api/v1/owner/restaurant/branches/   — list all branches (including inactive)
-    POST /api/v1/owner/restaurant/branches/   — add new branch (starts inactive)
+    GET /api/v1/owner/restaurant/branches/ — list all branches (including inactive)
+    POST /api/v1/owner/restaurant/branches/ — add new branch (starts inactive)
     """
     permission_classes = [IsAuthenticated, IsOwner]
 
@@ -530,8 +530,8 @@ class OwnerBranchManageView(APIView):
 
 class OwnerBranchDetailView(APIView):
     """
-    GET   /api/v1/owner/restaurant/branches/{id}/   — branch detail
-    PATCH /api/v1/owner/restaurant/branches/{id}/   — update name, city, address, min_order
+    GET /api/v1/owner/restaurant/branches/{id}/ — branch detail
+    PATCH /api/v1/owner/restaurant/branches/{id}/ — update name, city, address, min_order
     """
     permission_classes = [IsAuthenticated, IsOwner]
 
@@ -592,8 +592,8 @@ class OwnerBranchOpeningHoursView(APIView):
 
 class OwnerStaffListCreateView(APIView):
     """
-    GET  /api/v1/owner/staff/   — list all employees
-    POST /api/v1/owner/staff/   — create employee account
+    GET /api/v1/owner/staff/ — list all employees
+    POST /api/v1/owner/staff/ — create employee account
     """
     permission_classes = [IsAuthenticated, IsOwner]
 
@@ -639,8 +639,8 @@ class OwnerStaffListCreateView(APIView):
 
 class OwnerStaffDetailView(APIView):
     """
-    GET    /api/v1/owner/staff/{id}/
-    PATCH  /api/v1/owner/staff/{id}/   — update permissions / branch / is_active
+    GET /api/v1/owner/staff/{id}/
+    PATCH /api/v1/owner/staff/{id}/   — update permissions / branch / is_active
     DELETE /api/v1/owner/staff/{id}/   — deactivate employee
     """
     permission_classes = [IsAuthenticated, IsOwner]
@@ -667,8 +667,8 @@ class OwnerStaffDetailView(APIView):
             return APIResponse.error(message="Employee not found.", status_code=404)
 
         permissions = request.data.get("permissions")
-        branch_id   = request.data.get("branch_id")
-        is_active   = request.data.get("is_active")
+        branch_id = request.data.get("branch_id")
+        is_active = request.data.get("is_active")
 
         if permissions is not None:
             invalid = set(permissions) - set(Employee.ALL_PERMISSIONS)
@@ -679,7 +679,7 @@ class OwnerStaffDetailView(APIView):
 
         if branch_id is not None:
             try:
-                branch     = Branch.objects.get(id=branch_id, restaurant__owner=request.user, is_active=True)
+                branch = Branch.objects.get(id=branch_id, restaurant__owner=request.user, is_active=True)
                 emp.branch = branch
                 emp.save(update_fields=["branch", "updated_at"])
             except Branch.DoesNotExist:
@@ -703,7 +703,7 @@ class OwnerStaffDetailView(APIView):
 # --- Admin — Auth ---------------------------------------------------------------------------------------
 
 class AdminLoginView(APIView):
-    """POST /api/v1/admin/auth/login/  Body: { phone, password }"""
+    """POST /api/v1/admin/auth/login/ Body: { phone, password }"""
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -717,7 +717,7 @@ class AdminLoginView(APIView):
         return APIResponse.success(
             message="Logged in successfully.",
             data={
-                "user":   {"id": str(user.id), "full_name": user.full_name, "phone": user.phone},
+                "user": {"id": str(user.id), "full_name": user.full_name, "phone": user.phone},
                 "tokens": tokens,
             },
         )
@@ -746,7 +746,7 @@ class AdminVerifyOTPView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        phone    = request.data.get("phone", "").replace(" ", "")
+        phone = request.data.get("phone", "").replace(" ", "")
         otp_code = request.data.get("otp_code", "")
         if not phone or not otp_code:
             return APIResponse.error(
@@ -781,7 +781,7 @@ class AdminResetPasswordView(APIView):
 
 class AdminProfileView(APIView):
     """
-    GET   /api/v1/admin/profile/
+    GET /api/v1/admin/profile/
     PATCH /api/v1/admin/profile/
     """
     permission_classes = [IsAuthenticated, IsAdmin]
@@ -889,8 +889,8 @@ class AdminCustomerListView(APIView):
 
 class AdminCustomerDetailView(APIView):
     """
-    GET    /api/v1/admin/customers/{id}/   — detail
-    PATCH  /api/v1/admin/customers/{id}/   — activate / deactivate  { is_active: bool }
+    GET /api/v1/admin/customers/{id}/   — detail
+    PATCH /api/v1/admin/customers/{id}/   — activate / deactivate  { is_active: bool }
     DELETE /api/v1/admin/customers/{id}/   — hard delete
     """
     permission_classes = [IsAuthenticated, IsAdmin]
@@ -944,9 +944,9 @@ class AdminOwnerListView(APIView):
 
 class AdminOwnerDetailView(APIView):
     """
-    GET    /api/v1/admin/owners/{id}/   — detail (owner + their restaurant snapshot)
-    PATCH  /api/v1/admin/owners/{id}/   — activate / deactivate  { is_active: bool }
-    DELETE /api/v1/admin/owners/{id}/   — hard delete (cascades to restaurant, branches, staff)
+    GET /api/v1/admin/owners/{id}/ — detail (owner + their restaurant snapshot)
+    PATCH /api/v1/admin/owners/{id}/ — activate / deactivate  { is_active: bool }
+    DELETE /api/v1/admin/owners/{id}/ — hard delete (cascades to restaurant, branches, staff)
     """
     permission_classes = [IsAuthenticated, IsAdmin]
 
@@ -997,8 +997,8 @@ class AdminEmployeeListView(APIView):
 
 class AdminEmployeeDetailView(APIView):
     """
-    GET    /api/v1/admin/employees/{id}/   — detail
-    PATCH  /api/v1/admin/employees/{id}/   — activate / deactivate  { is_active: bool }
+    GET /api/v1/admin/employees/{id}/   — detail
+    PATCH /api/v1/admin/employees/{id}/   — activate / deactivate  { is_active: bool }
     """
     permission_classes = [IsAuthenticated, IsAdmin]
 

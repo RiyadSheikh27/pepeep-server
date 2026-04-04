@@ -10,8 +10,8 @@ class OpeningHoursReadSerializer(serializers.ModelSerializer):
 
 """
 Branch
-GET   → BranchDetailSerializer(branch)
-PATCH → BranchDetailSerializer(branch, data=request.data, partial=True)
+GET   - BranchDetailSerializer(branch)
+PATCH - BranchDetailSerializer(branch, data=request.data, partial=True)
 """
 class BranchDetailSerializer(serializers.ModelSerializer):
     opening_hours = OpeningHoursReadSerializer(many=True, read_only=True)
@@ -24,8 +24,8 @@ class BranchDetailSerializer(serializers.ModelSerializer):
 
 """
 Bank Detail
-GET   → RestaurantBankDetailSerializer(bank)
-PATCH → RestaurantBankDetailSerializer(bank, data=request.data, partial=True)
+GET - RestaurantBankDetailSerializer(bank)
+PATCH - RestaurantBankDetailSerializer(bank, data=request.data, partial=True)
 """
 
 class RestaurantBankDetailSerializer(serializers.ModelSerializer):
@@ -45,8 +45,8 @@ class RestaurantBankDetailSerializer(serializers.ModelSerializer):
 
 """
 Restaurant
-GET   → RestaurantSerializer(restaurant)
-PATCH → RestaurantSerializer(restaurant, data=request.data, partial=True)
+GET - RestaurantSerializer(restaurant)
+PATCH - RestaurantSerializer(restaurant, data=request.data, partial=True)
 """
 
 class RestaurantSerializer(serializers.ModelSerializer):

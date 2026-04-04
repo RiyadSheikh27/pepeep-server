@@ -69,38 +69,38 @@ auth_urlpatterns = [
     path("owner/staff/", OwnerStaffListCreateView.as_view()),
     path("owner/staff/<uuid:pk>/", OwnerStaffDetailView.as_view()),
 
-    # --- Admin - Auth ---------------------------------------------------------------
+    # --- Admin - Auth --------------------------------------------------------------
     path("admin/auth/login/", AdminLoginView.as_view()),
     path("admin/auth/forgot-password/", AdminForgotPasswordView.as_view()),
     path("admin/auth/otp/verify/", AdminVerifyOTPView.as_view()),
     path("admin/auth/reset-password/", AdminResetPasswordView.as_view()),
     path("admin/profile/", AdminProfileView.as_view()),
 
-    # --- Admin — Customers -----------------------------------------------------------
+    # --- Admin - Customers ---------------------------------------------------------
     path("admin/customers/", AdminCustomerListView.as_view()),
     path("admin/customers/<uuid:pk>/", AdminCustomerDetailView.as_view()),
 
-    # --- Admin — Owners --------------------------------------------------------------
+    # --- Admin - Owners ------------------------------------------------------------
     path("admin/owners/", AdminOwnerListView.as_view()),
     path("admin/owners/<uuid:pk>/", AdminOwnerDetailView.as_view()),
 
-    # --- Admin - Employees -----------------------------------------------------------
+    # --- Admin - Employees ---------------------------------------------------------
     path("admin/employees/", AdminEmployeeListView.as_view()),
     path("admin/employees/<uuid:pk>/", AdminEmployeeDetailView.as_view()),
 
-    # --- Admin - Restaurants ---------------------------------------------------------
+    # --- Admin - Restaurants -------------------------------------------------------
     path("admin/restaurants/", AdminRestaurantListView.as_view()),
     path("admin/restaurants/<uuid:pk>/", AdminRestaurantDetailView.as_view()),
     path("admin/restaurants/<uuid:pk>/approve/", AdminRestaurantApproveView.as_view()),
     path("admin/restaurants/<uuid:pk>/reject/", AdminRestaurantRejectView.as_view()),
 
-    # --- Admin — Branches ------------------------------------------------------------
+    # --- Admin - Branches ----------------------------------------------------------
     path("admin/branches/", AdminBranchListView.as_view()),
     path("admin/branches/<uuid:pk>/", AdminBranchDetailView.as_view()),
     path("admin/branches/<uuid:pk>/approve/", AdminBranchApproveView.as_view()),
     path("admin/branches/<uuid:pk>/reject/", AdminBranchRejectView.as_view()),
 
-    # --- Shared ----------------------------------------------------------------------
+    # --- Shared --------------------------------------------------------------------
     path("auth/logout/", LogoutView.as_view()),
 ]
 
