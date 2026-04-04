@@ -1,6 +1,6 @@
 """
-All auth business logic lives here.
-Views only call services — no HTTP objects (Request/Response) in this file.
+All auth and restaurants related business logic lives here.
+Views only call services - no HTTP objects (Request/Response) in this file.
 """
 import random
 import logging
@@ -15,9 +15,7 @@ from .models import OTPVerification, User
 log = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Exceptions
-# ---------------------------------------------------------------------------
+# --- Exceptions --------------------------------------------------------
 
 class AuthError(Exception):
     status_code = 400
@@ -44,9 +42,7 @@ class NotFound(AuthError):
     status_code = 404
 
 
-# ---------------------------------------------------------------------------
-# OTP Service
-# ---------------------------------------------------------------------------
+# --- OTP Service ----------------------------------------------
 
 class OTPService:
 
@@ -126,9 +122,7 @@ class OTPService:
         log.debug("SMS → %s | code: %s", phone, code)
 
 
-# ---------------------------------------------------------------------------
-# JWT helper
-# ---------------------------------------------------------------------------
+# --- JWT helper -----------------------------------------------------------
 
 def make_tokens(user: User, extra_claims: dict = None) -> dict:
     refresh = RefreshToken.for_user(user)
@@ -138,9 +132,7 @@ def make_tokens(user: User, extra_claims: dict = None) -> dict:
     return {"refresh": str(refresh), "access": str(refresh.access_token)}
 
 
-# ---------------------------------------------------------------------------
-# Customer
-# ---------------------------------------------------------------------------
+# --- Customer ------------------------------------------------------------
 
 class CustomerAuthService:
 
@@ -174,9 +166,7 @@ class CustomerAuthService:
         return user
 
 
-# ---------------------------------------------------------------------------
-# Employee
-# ---------------------------------------------------------------------------
+# --- Employee --------------------------------------------------------------
 
 class EmployeeAuthService:
 
@@ -207,9 +197,7 @@ class EmployeeAuthService:
         return user, tokens
 
 
-# ---------------------------------------------------------------------------
-# Owner
-# ---------------------------------------------------------------------------
+# --- Owner ---------------------------------------------------------------
 
 class OwnerAuthService:
 
@@ -362,9 +350,7 @@ class OwnerAuthService:
         branch.delete()
 
 
-# ---------------------------------------------------------------------------
-# Admin
-# ---------------------------------------------------------------------------
+# --- Admin ----------------------------------------------------------------------------------------------
 
 class AdminAuthService:
 
@@ -632,9 +618,7 @@ class AdminAuthService:
         return branch
 
 
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
+# --- Private helpers -----------------------------------------------------------------------------
 
 def _normalise_shifts(shifts: list) -> list:
     return [

@@ -1,23 +1,18 @@
 from rest_framework import serializers
 from .models import Restaurant, RestaurantBankDetail, Branch, BranchOpeningHours
 
-
-# ---------------------------------------------------------------------------
-# Opening Hours
-# ---------------------------------------------------------------------------
+# --- Opening Hours ------------------------------------------------------------------------
 
 class OpeningHoursReadSerializer(serializers.ModelSerializer):
     class Meta:
         model  = BranchOpeningHours
         fields = ["id", "day", "is_open", "shifts"]
 
-
-# ---------------------------------------------------------------------------
-# Branch
-# GET   → BranchDetailSerializer(branch)
-# PATCH → BranchDetailSerializer(branch, data=request.data, partial=True)
-# ---------------------------------------------------------------------------
-
+"""
+Branch
+GET   → BranchDetailSerializer(branch)
+PATCH → BranchDetailSerializer(branch, data=request.data, partial=True)
+"""
 class BranchDetailSerializer(serializers.ModelSerializer):
     opening_hours = OpeningHoursReadSerializer(many=True, read_only=True)
 
@@ -27,11 +22,11 @@ class BranchDetailSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "is_active", "opening_hours"]
 
 
-# ---------------------------------------------------------------------------
-# Bank Detail
-# GET   → RestaurantBankDetailSerializer(bank)
-# PATCH → RestaurantBankDetailSerializer(bank, data=request.data, partial=True)
-# ---------------------------------------------------------------------------
+"""
+Bank Detail
+GET   → RestaurantBankDetailSerializer(bank)
+PATCH → RestaurantBankDetailSerializer(bank, data=request.data, partial=True)
+"""
 
 class RestaurantBankDetailSerializer(serializers.ModelSerializer):
     class Meta:
@@ -48,11 +43,11 @@ class RestaurantBankDetailSerializer(serializers.ModelSerializer):
         return v
 
 
-# ---------------------------------------------------------------------------
-# Restaurant
-# GET   → RestaurantSerializer(restaurant)
-# PATCH → RestaurantSerializer(restaurant, data=request.data, partial=True)
-# ---------------------------------------------------------------------------
+"""
+Restaurant
+GET   → RestaurantSerializer(restaurant)
+PATCH → RestaurantSerializer(restaurant, data=request.data, partial=True)
+"""
 
 class RestaurantSerializer(serializers.ModelSerializer):
     bank_detail = RestaurantBankDetailSerializer(read_only=True)
@@ -70,9 +65,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "status", "is_active", "bank_detail"]
 
 
-# ---------------------------------------------------------------------------
-# Admin list view — flat, lightweight
-# ---------------------------------------------------------------------------
+# --- Admin list view -- flat, lightweight -----------------------------------
 
 class RestaurantListSerializer(serializers.ModelSerializer):
     owner_name  = serializers.CharField(source="owner.full_name", read_only=True)

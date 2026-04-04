@@ -41,9 +41,7 @@ from .services import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# --- Helpers --------------------------------------------------------------
 
 def _handle(exc):
     """Map a service exception to an APIResponse error."""
@@ -140,9 +138,7 @@ def _parse_branches(request) -> tuple[list | None, "APIResponse | None"]:
     return validated, None
 
 
-# ---------------------------------------------------------------------------
-# Customer
-# ---------------------------------------------------------------------------
+# --- Customer ------------------------------------------------------------------
 
 class CustomerOTPSendView(APIView):
     """
@@ -258,9 +254,7 @@ class CustomerChangePhoneVerifyView(APIView):
         )
 
 
-# ---------------------------------------------------------------------------
-# Employee
-# ---------------------------------------------------------------------------
+# --- Employee -------------------------------------------------------------------
 
 class EmployeeLoginView(APIView):
     """
@@ -300,9 +294,7 @@ class EmployeeLoginView(APIView):
         )
 
 
-# ---------------------------------------------------------------------------
-# Owner — Registration
-# ---------------------------------------------------------------------------
+# --- Owner — Registration ----------------------------------------------------------------------
 
 class OwnerRegOTPSendView(APIView):
     """
@@ -375,9 +367,7 @@ class OwnerRegSubmitView(APIView):
         )
 
 
-# ---------------------------------------------------------------------------
-# Owner — Login & Branch list (post-login selector)
-# ---------------------------------------------------------------------------
+# --- Owner — Login & Branch list (post-login selector) ----------------------------
 
 class OwnerLoginView(APIView):
     """
@@ -423,9 +413,7 @@ class OwnerBranchListView(APIView):
         )
 
 
-# ---------------------------------------------------------------------------
-# Owner — Profile (personal info)
-# ---------------------------------------------------------------------------
+# --- Owner — Profile (personal info)
 
 class OwnerProfileView(APIView):
     """
@@ -445,9 +433,8 @@ class OwnerProfileView(APIView):
         return APIResponse.success(message="Profile updated.", data=s.data)
 
 
-# ---------------------------------------------------------------------------
-# Owner — Restaurant (brand / legal / address)
-# ---------------------------------------------------------------------------
+
+# --- Owner — Restaurant (brand / legal / address) --------------------------------------
 
 class OwnerRestaurantView(APIView):
     """
@@ -476,9 +463,7 @@ class OwnerRestaurantView(APIView):
         return APIResponse.success(message="Restaurant updated.", data=s.data)
 
 
-# ---------------------------------------------------------------------------
-# Owner — Bank Detail
-# ---------------------------------------------------------------------------
+# --- Owner — Bank Detail -----------------------------------------------------
 
 class OwnerBankDetailView(APIView):
     """
@@ -506,9 +491,8 @@ class OwnerBankDetailView(APIView):
         return APIResponse.success(message="Bank details updated.")
 
 
-# ---------------------------------------------------------------------------
-# Owner — Branch management (all branches, including inactive)
-# ---------------------------------------------------------------------------
+
+# --- Owner — Branch management (all branches, including inactive) -------------------------------------
 
 class OwnerBranchManageView(APIView):
     """
@@ -604,9 +588,7 @@ class OwnerBranchOpeningHoursView(APIView):
         )
 
 
-# ---------------------------------------------------------------------------
-# Owner — Staff
-# ---------------------------------------------------------------------------
+# --- Owner — Staff ----------------------------------------------------------------
 
 class OwnerStaffListCreateView(APIView):
     """
@@ -718,9 +700,7 @@ class OwnerStaffDetailView(APIView):
         return APIResponse.success(message="Employee deactivated.")
 
 
-# ---------------------------------------------------------------------------
-# Admin — Auth
-# ---------------------------------------------------------------------------
+# --- Admin — Auth ---------------------------------------------------------------------------------------
 
 class AdminLoginView(APIView):
     """POST /api/v1/admin/auth/login/  Body: { phone, password }"""
@@ -817,9 +797,7 @@ class AdminProfileView(APIView):
         return APIResponse.success(message="Profile updated.", data=s.data)
 
 
-# ---------------------------------------------------------------------------
-# Admin — Restaurant & Branch Approvals
-# ---------------------------------------------------------------------------
+# --- Admin — Restaurant & Branch Approvals --------------------------------------------------
 
 class AdminRestaurantApproveView(APIView):
     """POST /api/v1/admin/restaurants/{id}/approve/"""
@@ -869,9 +847,8 @@ class AdminBranchRejectView(APIView):
         return APIResponse.success(message="Branch rejected/deactivated.")
 
 
-# ---------------------------------------------------------------------------
-# Shared
-# ---------------------------------------------------------------------------
+
+# --- Shared ----------------------------------------------------------------------------
 
 class LogoutView(APIView):
     """
@@ -892,9 +869,8 @@ class LogoutView(APIView):
         return APIResponse.success(message="Logged out successfully.")
 
 
-# ---------------------------------------------------------------------------
-# Admin — Customer management
-# ---------------------------------------------------------------------------
+
+# --- Admin — Customer management -------------------------------------------------------------
 
 class AdminCustomerListView(APIView):
     """
@@ -947,9 +923,7 @@ class AdminCustomerDetailView(APIView):
         return APIResponse.success(message="Customer deleted.")
 
 
-# ---------------------------------------------------------------------------
-# Admin — Owner management
-# ---------------------------------------------------------------------------
+# --- Admin — Owner management -------------------------------------------------------
 
 class AdminOwnerListView(APIView):
     """
@@ -1003,9 +977,7 @@ class AdminOwnerDetailView(APIView):
         return APIResponse.success(message="Owner and all associated data deleted.")
 
 
-# ---------------------------------------------------------------------------
-# Admin — Employee management (read-only + deactivate)
-# ---------------------------------------------------------------------------
+# --- Admin — Employee management (read-only + deactivate) ----------------------------
 
 class AdminEmployeeListView(APIView):
     """
@@ -1058,9 +1030,7 @@ class AdminEmployeeDetailView(APIView):
         )
 
 
-# ---------------------------------------------------------------------------
-# Admin — Restaurant management (list / detail — approve/reject already exist)
-# ---------------------------------------------------------------------------
+# --- Admin — Restaurant management (list / detail — approve/reject already exist) --------------
 
 class AdminRestaurantListView(APIView):
     """
@@ -1093,9 +1063,7 @@ class AdminRestaurantDetailView(APIView):
         return APIResponse.success(data=RestaurantSerializer(restaurant).data)
 
 
-# ---------------------------------------------------------------------------
-# Admin — Branch management (list / detail — approve/reject already exist)
-# ---------------------------------------------------------------------------
+# --- Admin — Branch management (list / detail — approve/reject already exist) ----------
 
 class AdminBranchListView(APIView):
     """

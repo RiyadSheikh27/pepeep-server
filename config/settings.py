@@ -29,6 +29,23 @@ DEBUG = env("DEBUG")
 
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
 
+"""Security"""
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://austin-ovisaclike-nonoptically.ngrok-free.dev",
+    "http://localhost:8000/",
+    "http://0.0.0.0:8000/",
+    "http://10.10.13.19:8070/",
+]
+CORS_ALLOWED_ORIGIN = [
+    "http://localhost:5174/",
+    "http://localhost:5173/",
+    "http://localhost:3000/",
+]
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+
+"""End of Security"""
 
 # Application definition
 
@@ -95,6 +112,9 @@ DATABASES = {
     }
 }
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://austin-ovisaclike-nonoptically.ngrok-free.dev",
+]
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators

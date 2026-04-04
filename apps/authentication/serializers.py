@@ -9,9 +9,7 @@ from apps.restaurants.serializers import (
 from .models import User
 
 
-# ---------------------------------------------------------------------------
-# Shared / Mixins
-# ---------------------------------------------------------------------------
+# --- Shared / Mixins ----------------------------------------------------------
 
 class PhoneSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=20, validators=[validate_sa_phone])
@@ -29,9 +27,7 @@ class OTPCodeMixin(serializers.Serializer):
         return v
 
 
-# ---------------------------------------------------------------------------
-# Customer
-# ---------------------------------------------------------------------------
+# --- Customes -------------------------------------------------------------------------
 
 class CustomerOTPSendSerializer(PhoneSerializer):
     purpose = serializers.ChoiceField(choices=["login", "change_phone"], default="login")
@@ -69,9 +65,7 @@ class ChangePhoneVerifySerializer(OTPCodeMixin):
         return v.replace(" ", "")
 
 
-# ---------------------------------------------------------------------------
-# Employee
-# ---------------------------------------------------------------------------
+# --- Employee ---------------------------------------------------------------------------------------
 
 class EmployeeLoginSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=50)
@@ -111,9 +105,7 @@ class CreateEmployeeSerializer(serializers.Serializer):
         return v.replace(" ", "") if v else v
 
 
-# ---------------------------------------------------------------------------
-# Owner — Auth
-# ---------------------------------------------------------------------------
+# --- Owner — Auth ------------------------------------------------------------------
 
 class OwnerLoginSerializer(serializers.Serializer):
     phone    = serializers.CharField(max_length=20, validators=[validate_sa_phone])
@@ -132,9 +124,7 @@ class BranchLoginSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "city", "restaurant_name"]
 
 
-# ---------------------------------------------------------------------------
-# Opening Hours write serializers (input/validation only — no model backing)
-# ---------------------------------------------------------------------------
+# --- Opening Hours write serializers (input/validation only -- no model backing)-----------------
 
 class ShiftSerializer(serializers.Serializer):
     open  = serializers.TimeField(format="%H:%M", input_formats=["%H:%M"])
@@ -180,9 +170,7 @@ class BranchCreateSerializer(serializers.Serializer):
         return hours
 
 
-# ---------------------------------------------------------------------------
-# Owner — Registration
-# ---------------------------------------------------------------------------
+# --- Owner — Registration -----------------------------------------------------------------------------------
 
 class OwnerRegSubmitSerializer(serializers.Serializer):
     """
@@ -238,9 +226,7 @@ class OwnerRegSubmitSerializer(serializers.Serializer):
         return v
 
 
-# ---------------------------------------------------------------------------
-# Owner — Profile
-# ---------------------------------------------------------------------------
+# --- Owner — Profile -------------------------------------------------------
 
 class OwnerProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -249,9 +235,7 @@ class OwnerProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "phone", "created_at"]
 
 
-# ---------------------------------------------------------------------------
-# Admin
-# ---------------------------------------------------------------------------
+# --- Admin ----------------------------------------------------------------
 
 class AdminLoginSerializer(serializers.Serializer):
     phone    = serializers.CharField(max_length=20, validators=[validate_sa_phone])
@@ -294,10 +278,8 @@ class AdminProfileSerializer(serializers.ModelSerializer):
         return v
 
 
-# ---------------------------------------------------------------------------
-# Re-export restaurant serializers used in auth views
-# (imported here so views only need to import from .serializers)
-# ---------------------------------------------------------------------------
+""" Re-export restaurant serializers used in auth views
+(imported here so views only need to import from .serializers) """
 
 __all__ = [
     # auth-owned
@@ -315,9 +297,7 @@ __all__ = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Admin — List serializers (read-only, flat representations)
-# ---------------------------------------------------------------------------
+# --- Admin — List serializers (read-only, flat representations) ---------------------------------------
 
 class AdminCustomerListSerializer(serializers.ModelSerializer):
     class Meta:
