@@ -108,7 +108,7 @@ class Branch(TimeStampedModel):
 class BranchOpeningHours(TimeStampedModel):
     """
     One row per day per branch.
-    shifts: [{"open": "09:00", "close": "22:00"}, ...]  — up to 3 shifts per day.
+    shifts: [{"open": "09:00", "close": "22:00"}, ...]  -- up to 3 shifts per day.
     """
     branch  = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="opening_hours")
     day     = models.CharField(max_length=10)   # monday, tuesday, ...
