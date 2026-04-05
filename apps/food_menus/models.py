@@ -4,7 +4,7 @@ from apps.restaurants.models import Branch
 
 # --- Menu Section --------------------------------------------------------------------------------
 
-class MenuCategories(TimeStampedModel):
+class MenuCategory(TimeStampedModel):
     """ Add Menu Category """
     branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="menu_categories")
     name = models.CharField(max_length=100)
@@ -30,7 +30,7 @@ class MenuItem(TimeStampedModel):
     ]
     
     branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="menu_items")
-    category = models.ForeignKey(MenuCategories, on_delete=models.CASCADE, related_name="items")
+    category = models.ForeignKey(MenuCategory, on_delete=models.CASCADE, related_name="items")
     name = models.CharField(max_length=200)
     photo = models.FileField(upload_to="menu/items/%Y/%m", null=True, blank=True)
     price = models.DecimalField(max_digits=8, decimal_places=2)
