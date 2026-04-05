@@ -47,7 +47,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 """End of Security"""
 
-# Application definition
+# Application definition 
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -59,6 +59,7 @@ INSTALLED_APPS = [
 
     # --- Third-party apps ---
     'corsheaders',
+    'drf_spectacular',
 
     # --- Local apps ---
     'apps.authentication',
@@ -66,6 +67,7 @@ INSTALLED_APPS = [
     'apps.utils',
     'apps.api',
     'apps.restaurants',
+    'apps.food_menus',
 ]
 
 MIDDLEWARE = [

@@ -14,8 +14,8 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     class Role(models.TextChoices):
         CUSTOMER = "customer", "Customer"
         EMPLOYEE = "employee", "Employee"
-        OWNER    = "owner",    "Owner"
-        ADMIN    = "admin",    "Admin"
+        OWNER = "owner", "Owner"
+        ADMIN = "admin", "Admin"
 
     phone = models.CharField(max_length=20, unique=True, null=True, blank=True, validators=[validate_sa_phone])
     username = models.CharField(max_length=50, unique=True, null=True, blank=True)
@@ -54,8 +54,8 @@ class OTPVerification(TimeStampedModel):
         PASSWORD_RESET = "password_reset", "Password Reset"
         OWNER_REGISTER = "owner_register", "Owner Register"
 
-    MAX_ATTEMPTS    = 5
-    TTL_SECONDS     = 300   # 5 min
+    MAX_ATTEMPTS = 5
+    TTL_SECONDS = 300   # 5 min
     RESEND_COOLDOWN = 60    # 1 min between sends
     MAX_SENDS_HOUR  = 5
 

@@ -5,7 +5,8 @@ from django import forms
 from .models import User, OTPVerification
 
 
-# Custom User Change Form (IMPORTANT FIX)
+# --- Custom User Change Form -----------------------------------
+
 class UserChangeForm(forms.ModelForm):
     password = forms.CharField(required=False)
 
@@ -17,7 +18,8 @@ class UserChangeForm(forms.ModelForm):
         return self.initial.get("password")  # prevents None issue
 
 
-# Custom User Creation Form
+# --- Custom User Creation Form ----------------------------------
+
 class UserCreationForm(forms.ModelForm):
     password = forms.CharField(widget=forms.PasswordInput)
 
@@ -33,7 +35,8 @@ class UserCreationForm(forms.ModelForm):
         return user
 
 
-# Admin Config
+# --- Admin Config ----------------------------------------------
+
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     form = UserChangeForm
@@ -56,7 +59,7 @@ class UserAdmin(BaseUserAdmin):
 
     readonly_fields = ("created_at", "updated_at", "last_login")
 
-    # 🔥 VERY IMPORTANT (fixes your error)
+
     fieldsets = (
         (None, {"fields": ("phone", "password")}),
         ("Personal Info", {"fields": ("username", "email", "full_name", "avatar")}),
@@ -72,7 +75,7 @@ class UserAdmin(BaseUserAdmin):
     )
 
 
-# OTP Admin
+# --- OTP Admin ---------------------------------------------------
 @admin.register(OTPVerification)
 class OTPVerificationAdmin(admin.ModelAdmin):
     list_display = (
