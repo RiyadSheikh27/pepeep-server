@@ -57,7 +57,7 @@ def _get_group(item, group_id) -> ModifierGroup:
 
 
 def _get_option(group, option_id) -> ModifierOption:
-    """Menu - newly added: resolve an option that belongs to the given group."""
+    """ resolve an option that belongs to the given group."""
     try:
         return ModifierOption.objects.get(id=option_id, group=group)
     except ModifierOption.DoesNotExist:
@@ -71,9 +71,7 @@ class MenuCategoryService:
     @staticmethod
     def list_categories(branch: Branch):
         """
-        Menu - newly added
         Returns all categories for a branch, annotated with item_count.
-        Single query — no N+1.
         """
         return (
             MenuCategory.objects
@@ -85,10 +83,7 @@ class MenuCategoryService:
     @staticmethod
     def get_category_detail(branch: Branch, category_id):
         """
-        Menu - newly added
-        Full category with items → modifier groups → options.
-        All fetched in 4 queries total (category + items + groups + options).
-        No N+1.
+        Full category with items - modifier groups - options.
         """
         try:
             return (
@@ -125,13 +120,13 @@ class MenuCategoryService:
     @staticmethod
     @transaction.atomic
     def create_category(branch: Branch, data: dict) -> MenuCategory:
-        """Menu - newly added: create a new category for a branch."""
+        """ create a new category for a branch."""
         return MenuCategory.objects.create(branch=branch, **data)
 
     @staticmethod
     @transaction.atomic
     def update_category(branch: Branch, category_id, data: dict) -> MenuCategory:
-        """Menu - newly added: partial update a category."""
+        """ partial update a category."""
         category = _get_category(branch, category_id)
         for field, value in data.items():
             setattr(category, field, value)
@@ -189,16 +184,14 @@ class MenuItemService:
     @transaction.atomic
     def create_item(branch: Branch, category: MenuCategory, data: dict) -> MenuItem:
         """
-        Menu - newly added
-        Step 1: create the item. Modifier groups are added separately (step 2).
-        category is already resolved and validated by the serializer.
+        create the item. Modifier groups are added separately.
         """
         return MenuItem.objects.create(branch=branch, **data)
 
     @staticmethod
     @transaction.atomic
     def update_item(branch: Branch, item_id, data: dict) -> MenuItem:
-        """Menu - newly added: partial update an item (name, price, photo, etc.)."""
+        """partial update an item (name, price, photo, etc.)."""
         item = _get_item(branch, item_id)
         for field, value in data.items():
             setattr(item, field, value)
@@ -208,7 +201,7 @@ class MenuItemService:
     @staticmethod
     @transaction.atomic
     def delete_item(branch: Branch, item_id):
-        """Menu - newly added: delete an item and all its modifier groups/options."""
+        """delete an item and all its modifier groups/options."""
         item = _get_item(branch, item_id)
         item.delete()
         log.info("Menu item deleted: id=%s branch=%s", item_id, branch.id)
@@ -216,7 +209,7 @@ class MenuItemService:
     @staticmethod
     @transaction.atomic
     def toggle_availability(branch: Branch, item_id) -> MenuItem:
-        """Menu - newly added: flip is_available on an item."""
+        """flip is_available on an item."""
         item = _get_item(branch, item_id)
         item.is_available = not item.is_available
         item.save(update_fields=["is_available", "updated_at"])
@@ -230,9 +223,8 @@ class ModifierGroupService:
     @staticmethod
     def list_groups(branch: Branch, item_id):
         """
-        Menu - newly added
         All modifier groups for an item, with options nested.
-        Fetched in 2 queries. No N+1.
+        Fetched in 2 queries.
         """
         item = _get_item(branch, item_id)
         return (
@@ -251,14 +243,14 @@ class ModifierGroupService:
     @staticmethod
     @transaction.atomic
     def create_group(branch: Branch, item_id, data: dict) -> ModifierGroup:
-        """Menu - newly added: step 2 — add a modifier group to an item."""
+        """add a modifier group to an item."""
         item = _get_item(branch, item_id)
         return ModifierGroup.objects.create(item=item, **data)
 
     @staticmethod
     @transaction.atomic
     def update_group(branch: Branch, item_id, group_id, data: dict) -> ModifierGroup:
-        """Menu - newly added: partial update a modifier group."""
+        """partial update a modifier group."""
         item  = _get_item(branch, item_id)
         group = _get_group(item, group_id)
         for field, value in data.items():
@@ -269,7 +261,7 @@ class ModifierGroupService:
     @staticmethod
     @transaction.atomic
     def delete_group(branch: Branch, item_id, group_id):
-        """Menu - newly added: delete a modifier group and all its options."""
+        """ delete a modifier group and all its options."""
         item  = _get_item(branch, item_id)
         group = _get_group(item, group_id)
         group.delete()
@@ -283,7 +275,7 @@ class ModifierOptionService:
     @staticmethod
     @transaction.atomic
     def create_option(branch: Branch, item_id, group_id, data: dict) -> ModifierOption:
-        """Menu - newly added: add an option to a modifier group."""
+        """ add an option to a modifier group."""
         item   = _get_item(branch, item_id)
         group  = _get_group(item, group_id)
         return ModifierOption.objects.create(group=group, **data)
@@ -291,7 +283,7 @@ class ModifierOptionService:
     @staticmethod
     @transaction.atomic
     def update_option(branch: Branch, item_id, group_id, option_id, data: dict) -> ModifierOption:
-        """Menu - newly added: partial update a modifier option."""
+        """ partial update a modifier option."""
         item   = _get_item(branch, item_id)
         group  = _get_group(item, group_id)
         option = _get_option(group, option_id)
@@ -303,7 +295,7 @@ class ModifierOptionService:
     @staticmethod
     @transaction.atomic
     def delete_option(branch: Branch, item_id, group_id, option_id):
-        """Menu - newly added: delete a single modifier option."""
+        """ delete a single modifier option."""
         item   = _get_item(branch, item_id)
         group  = _get_group(item, group_id)
         option = _get_option(group, option_id)

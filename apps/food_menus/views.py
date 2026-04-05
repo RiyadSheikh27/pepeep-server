@@ -85,7 +85,7 @@ class MenuCategoryListCreateView(APIView):
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         category = MenuCategoryService.create_category(branch, s.validated_data)
-        # Menu - newly added: re-fetch with annotation for consistent response shape
+        #  re-fetch with annotation for consistent response shape
         category.item_count = 0
         return APIResponse.success(
             message="Category created.",
@@ -117,7 +117,7 @@ class MenuCategoryDetailView(APIView):
         if err:
             return err
         try:
-            # Menu - newly added: fetch existing instance so validate_name can exclude it
+            #  fetch existing instance so validate_name can exclude it
             existing = MenuCategoryService.get_category_detail(branch, category_id)
         except MenuNotFound as e:
             return _menu_handle(e)
@@ -163,7 +163,7 @@ class MenuItemListCreateView(APIView):
         branch, err = _resolve_branch(request, branch_id)
         if err:
             return err
-        # Menu - newly added: select_related avoids N+1 on category name
+        #  select_related avoids N+1 on category name
         items = (
             MenuItem.objects
             .filter(branch=branch)
@@ -185,7 +185,7 @@ class MenuItemListCreateView(APIView):
         )
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
-        # Menu - newly added: category is resolved by the serializer into validated_data["category"]
+        #  category is resolved by the serializer into validated_data["category"]
         category = s.validated_data.pop("category")
         item = MenuItemService.create_item(branch, category, {**s.validated_data, "category": category})
         return APIResponse.success(
@@ -302,7 +302,7 @@ class ModifierGroupListCreateView(APIView):
             group = ModifierGroupService.create_group(branch, item_id, s.validated_data)
         except MenuNotFound as e:
             return _menu_handle(e)
-        # Menu - newly added: attach annotation manually for serializer
+        #  attach annotation manually for serializer
         group.option_count = 0
         return APIResponse.success(
             message="Modifier group added.",
@@ -346,7 +346,7 @@ class ModifierGroupDetailView(APIView):
         return APIResponse.success(message="Modifier group deleted.")
 
 
-# --- Menu - newly added: Modifier Option endpoints -------------------------------------------------
+# ---  Modifier Option endpoints -------------------------------------------------
 
 class ModifierOptionCreateView(APIView):
     """
