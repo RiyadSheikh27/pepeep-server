@@ -119,21 +119,21 @@ auth_urlpatterns = [
 menu_urlpatterns = [
 
     # --- Categories ----------------------------------------------------------------
-    path("branches/<uuid:branch_id>/categories/", MenuCategoryListCreateView.as_view()),
-    path("branches/<uuid:branch_id>/categories/<uuid:category_id>/", MenuCategoryDetailView.as_view()),
+    path("menu/branches/<uuid:branch_id>/categories/", MenuCategoryListCreateView.as_view()),
+    path("menu/branches/<uuid:branch_id>/categories/<uuid:category_id>/", MenuCategoryDetailView.as_view()),
 
     # --- Items ---------------------------------------------------------------------
-    path("branches/<uuid:branch_id>/items/", MenuItemListCreateView.as_view()),
-    path("branches/<uuid:branch_id>/items/<uuid:item_id>/", MenuItemDetailView.as_view()),
-    path("branches/<uuid:branch_id>/items/<uuid:item_id>/toggle-availability/", MenuItemToggleAvailabilityView.as_view()),
+    path("menu/branches/<uuid:branch_id>/items/", MenuItemListCreateView.as_view()),
+    path("menu/branches/<uuid:branch_id>/items/<uuid:item_id>/", MenuItemDetailView.as_view()),
+    path("menu/branches/<uuid:branch_id>/items/<uuid:item_id>/toggle-availability/", MenuItemToggleAvailabilityView.as_view()),
 
     # --- Modifier Groups -----------------------------------------------------------
-    path("branches/<uuid:branch_id>/items/<uuid:item_id>/groups/", ModifierGroupListCreateView.as_view()),
-    path("branches/<uuid:branch_id>/items/<uuid:item_id>/groups/<uuid:group_id>/", ModifierGroupDetailView.as_view()),
+    path("menu/branches/<uuid:branch_id>/items/<uuid:item_id>/groups/", ModifierGroupListCreateView.as_view()),
+    path("menu/branches/<uuid:branch_id>/items/<uuid:item_id>/groups/<uuid:group_id>/", ModifierGroupDetailView.as_view()),
 
     # --- Modifier Options ----------------------------------------------------------
-    path("branches/<uuid:branch_id>/items/<uuid:item_id>/groups/<uuid:group_id>/options/", ModifierOptionCreateView.as_view()),
-    path("branches/<uuid:branch_id>/items/<uuid:item_id>/groups/<uuid:group_id>/options/<uuid:option_id>/", ModifierOptionDetailView.as_view()),
+    path("menu/branches/<uuid:branch_id>/items/<uuid:item_id>/groups/<uuid:group_id>/options/", ModifierOptionCreateView.as_view()),
+    path("menu/branches/<uuid:branch_id>/items/<uuid:item_id>/groups/<uuid:group_id>/options/<uuid:option_id>/", ModifierOptionDetailView.as_view()),
 ]
 
 urlpatterns = [

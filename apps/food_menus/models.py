@@ -6,17 +6,18 @@ from apps.restaurants.models import Branch
 
 class MenuCategory(TimeStampedModel):
     """ Add Menu Category """
-    branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="menu_categories")
-    name = models.CharField(max_length=100)
+    branch = models.ForeignKey("restaurants.Branch", on_delete=models.CASCADE, related_name="menu_categories",)
+    name= models.CharField(max_length=100)
+    is_active  = models.BooleanField(default=True, db_index=True)
     sort_order = models.PositiveSmallIntegerField(default=0, db_index=True)
-
+ 
     class Meta:
-        db_table = "menu_categories"
-        ordering = ["sort_order", "name"]
+        db_table= "menu_categories"
+        ordering= ["sort_order", "name"]
         unique_together = [["branch", "name"]]
-
+ 
     def __str__(self):
-        return f"{self.branch.name} - {self.name}"
+        return f"{self.branch.name} › {self.name}"
     
 class MenuItem(TimeStampedModel):
     """ Add Menu Items """

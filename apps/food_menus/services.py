@@ -38,7 +38,7 @@ def _get_category(branch, category_id) -> MenuCategory:
         return MenuCategory.objects.get(id=category_id, branch=branch)
     except MenuCategory.DoesNotExist:
         raise MenuNotFound("Category not found.")
-
+    
 
 def _get_item(branch, item_id) -> MenuItem:
     """ resolve an item that belongs to the given branch."""
@@ -46,7 +46,7 @@ def _get_item(branch, item_id) -> MenuItem:
         return MenuItem.objects.get(id=item_id, branch=branch)
     except MenuItem.DoesNotExist:
         raise MenuNotFound("Menu item not found.")
-
+    
 
 def _get_group(item, group_id) -> ModifierGroup:
     """ resolve a modifier group that belongs to the given item."""
@@ -76,7 +76,6 @@ class MenuCategoryService:
         return (
             MenuCategory.objects
             .filter(branch=branch)
-            .annotate(item_count=Count("items"))
             .order_by("sort_order", "name")
         )
 
@@ -89,7 +88,6 @@ class MenuCategoryService:
             return (
                 MenuCategory.objects
                 .filter(branch=branch)
-                .annotate(item_count=Count("items"))
                 .prefetch_related(
                     Prefetch(
                         "items",
@@ -121,7 +119,15 @@ class MenuCategoryService:
     @transaction.atomic
     def create_category(branch: Branch, data: dict) -> MenuCategory:
         """ create a new category for a branch."""
-        return MenuCategory.objects.create(branch=branch, **data)
+        try:
+            return MenuCategory.objects.create(branch=branch, **data)
+        except Exception as e:
+            if "UNIQUE constraint failed" in str(e) or "duplicate key" in str(e).lower():
+                name = data.get("name", "unknown")
+                raise MenuError(
+                    f"A category named '{name}' already exists for this branch."
+                )
+            raise
 
     @staticmethod
     @transaction.atomic
@@ -130,7 +136,15 @@ class MenuCategoryService:
         category = _get_category(branch, category_id)
         for field, value in data.items():
             setattr(category, field, value)
-        category.save()
+        try:
+            category.save()
+        except Exception as e:
+            if "UNIQUE constraint failed" in str(e) or "duplicate key" in str(e).lower():
+                name = data.get("name", category.name)
+                raise MenuError(
+                    f"A category named '{name}' already exists for this branch."
+                )
+            raise
         return category
 
     @staticmethod

@@ -133,7 +133,6 @@ class MenuCategoryDetailView(APIView):
             category = MenuCategoryService.update_category(branch, category_id, s.validated_data)
         except (MenuNotFound, MenuError) as e:
             return _menu_handle(e)
-        category.item_count = existing.item_count
         return APIResponse.success(
             message="Category updated.",
             data=MenuCategoryListSerializer(category).data,

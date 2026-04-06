@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.utils.custom_fields import AbsoluteURLImageField, AbsoluteURLFileField
 
 from apps.utils.validators import validate_sa_phone
 from apps.restaurants.models import Branch, Employee, Restaurant, RestaurantBankDetail
@@ -38,6 +39,8 @@ class CustomerOTPVerifySerializer(PhoneSerializer, OTPCodeMixin):
 
 
 class CustomerProfileSerializer(serializers.ModelSerializer):
+    avatar = AbsoluteURLImageField(read_only=True)
+    
     class Meta:
         model  = User
         fields = ["id", "full_name", "username", "email", "phone", "avatar", "created_at"]
@@ -229,6 +232,8 @@ class OwnerRegSubmitSerializer(serializers.Serializer):
 # --- Owner — Profile -------------------------------------------------------
 
 class OwnerProfileSerializer(serializers.ModelSerializer):
+    avatar = AbsoluteURLImageField(read_only=True)
+    
     class Meta:
         model  = User
         fields = ["id", "full_name", "email", "phone", "avatar", "created_at"]
@@ -255,6 +260,8 @@ class AdminResetPasswordSerializer(PhoneSerializer):
 
 
 class AdminProfileSerializer(serializers.ModelSerializer):
+    avatar = AbsoluteURLImageField(read_only=True)
+    
     class Meta:
         model  = User
         fields = ["id", "full_name", "username", "email", "phone", "avatar"]
@@ -300,6 +307,8 @@ __all__ = [
 # --- Admin — List serializers (read-only, flat representations) ---------------------------------------
 
 class AdminCustomerListSerializer(serializers.ModelSerializer):
+    avatar = AbsoluteURLImageField(read_only=True)
+    
     class Meta:
         model  = User
         fields = ["id", "full_name", "username", "phone", "email", "avatar", "is_active", "created_at"]
@@ -309,6 +318,7 @@ class AdminCustomerListSerializer(serializers.ModelSerializer):
 class AdminOwnerListSerializer(serializers.ModelSerializer):
     restaurant_name   = serializers.SerializerMethodField()
     restaurant_status = serializers.SerializerMethodField()
+    avatar = AbsoluteURLImageField(read_only=True)
 
     class Meta:
         model  = User

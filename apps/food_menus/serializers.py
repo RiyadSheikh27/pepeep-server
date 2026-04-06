@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.utils.custom_fields import AbsoluteURLImageField
 from .models import MenuCategory, MenuItem, ModifierGroup, ModifierOption
 
 # --- Modifier Options Serializers Section ----------------------------------------------
@@ -48,6 +49,7 @@ DIETARY_VALUES = [v for v, _ in MenuItem.DIETARY_CHOICES]
 class MenuItemListSerializer(serializers.ModelSerializer):
     """ Category Item List """
     category_name = serializers.CharField(source="category.name", read_only=True)
+    photo = AbsoluteURLImageField(read_only=True)
 
     class Meta:
         model  = MenuItem
@@ -62,6 +64,7 @@ class MenuItemDetailSerializer(serializers.ModelSerializer):
     """ Full details serializer of Menus with their groups and options """
     category_name   = serializers.CharField(source="category.name", read_only=True)
     modifier_groups = ModifierGroupSerializer(many=True, read_only=True)
+    photo = AbsoluteURLImageField(read_only=True)
 
     class Meta:
         model  = MenuItem
@@ -109,12 +112,12 @@ class MenuCategoryListSerializer(serializers.ModelSerializer):
     List serializer -- item_count is annotated by the service.
     """
 
-    item_count = serializers.IntegerField(read_only=True)   # annotated
+    # item_count = serializers.IntegerField(read_only=True)   # annotated
  
     class Meta:
         model  = MenuCategory
-        fields = ["id", "name", "is_active", "sort_order", "item_count"]
-        read_only_fields = ["id", "item_count"]
+        fields = ["id", "name", "is_active", "sort_order"]
+        read_only_fields = ["id"]
  
  
 class MenuCategoryDetailSerializer(serializers.ModelSerializer):
@@ -123,12 +126,12 @@ class MenuCategoryDetailSerializer(serializers.ModelSerializer):
     """
 
     items = MenuItemDetailSerializer(many=True, read_only=True)
-    item_count = serializers.IntegerField(read_only=True)   # annotated
+    # item_count = serializers.IntegerField(read_only=True)   # annotated
  
     class Meta:
         model  = MenuCategory
-        fields = ["id", "name", "is_active", "sort_order", "item_count", "items"]
-        read_only_fields = ["id", "item_count", "items"]
+        fields = ["id", "name", "is_active", "sort_order", "items"]
+        read_only_fields = ["id", "items"]
  
  
 class MenuCategoryWriteSerializer(serializers.ModelSerializer):
@@ -138,3 +141,21 @@ class MenuCategoryWriteSerializer(serializers.ModelSerializer):
         model = MenuCategory
         fields = ["id", "name", "is_active", "sort_order"]
         read_only_fields = ["id"]
+
+    def validate_name(self, value):
+        """Check that the category name is unique within the branch."""
+        branch = self.context.get("branch")
+        if not branch:
+            return value
+        
+        # Check for existing category with same name in this branch
+        # Exclude current instance if updating
+        queryset = MenuCategory.objects.filter(branch=branch, name=value)
+        if self.instance:
+            queryset = queryset.exclude(id=self.instance.id)
+        
+        if queryset.exists():
+            raise serializers.ValidationError(
+                f"A category named '{value}' already exists for this branch."
+            )
+        return value
