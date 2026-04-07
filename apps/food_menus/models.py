@@ -65,7 +65,7 @@ class ModifierGroup(TimeStampedModel):
  
     # how many options the customer can select inside this group
     min_select = models.PositiveSmallIntegerField(default=0)
-    max_select = models.PositiveSmallIntegerField(default=1)
+    max_select = models.PositiveSmallIntegerField(default=5)
 
     sort_order = models.PositiveSmallIntegerField(default=0)
  

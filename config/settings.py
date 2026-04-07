@@ -240,3 +240,5 @@ SPECTACULAR_SETTINGS = {
         {"name": "admin",     "description": "Admin login, password reset, profile"},
     ],
 }
+
+BASE_URL = env("BASE_URL", default="https://austin-ovisaclike-nonoptically.ngrok-free.dev/")
