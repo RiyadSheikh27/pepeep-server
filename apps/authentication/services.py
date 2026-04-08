@@ -568,7 +568,7 @@ class AdminAuthService:
         if status:
             qs = qs.filter(status=status)
         if category:
-            qs = qs.filter(category=category)
+            qs = qs.filter(category__name__icontains=category)
         return qs
 
     @staticmethod

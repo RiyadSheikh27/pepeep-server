@@ -1,6 +1,3 @@
-"""
-Owner manages their own branch menus.
-"""
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 

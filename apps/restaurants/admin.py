@@ -30,7 +30,6 @@ class RestaurantAdmin(admin.ModelAdmin):
                 'owner',
                 'legal_name',
                 'brand_name',
-                'name',
                 'category',
                 'logo',
                 'short_description',
@@ -44,7 +43,7 @@ class RestaurantAdmin(admin.ModelAdmin):
                 'vat_certificate',
             ]
         }),
-        ('Address', {
+        ('Address & Location', {
             'fields': [
                 'short_address',
                 'street_name',
@@ -55,6 +54,8 @@ class RestaurantAdmin(admin.ModelAdmin):
                 'city',
                 'postal_code',
                 'country',
+                'latitude',
+                'longitude',
             ]
         }),
         ('Status & Activity', {

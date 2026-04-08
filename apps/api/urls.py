@@ -36,6 +36,12 @@ from apps.authentication.views import (
     LogoutView,
 )
 
+from apps.restaurants.views import (
+    RestaurantCategoryListCreateView,
+    RestaurantCategoryDetailView,
+    RestaurantSearchView,
+)
+
 from apps.food_menus.views import (
     MenuCategoryListCreateView,
     MenuCategoryDetailView,
@@ -136,7 +142,18 @@ menu_urlpatterns = [
     path("menu/branches/<uuid:branch_id>/items/<uuid:item_id>/groups/<uuid:group_id>/options/<uuid:option_id>/", ModifierOptionDetailView.as_view()),
 ]
 
+restaurant_urlpatterns = [
+
+    # --- Restaurant Categories -------------------------------------------------------
+    path("restaurants/categories/", RestaurantCategoryListCreateView.as_view()),
+    path("restaurants/categories/<uuid:category_id>/", RestaurantCategoryDetailView.as_view()),
+    
+    # --- Restaurant Search -----------------------------------------------------------
+    path("restaurants/search/", RestaurantSearchView.as_view()),
+]
+
 urlpatterns = [
     *auth_urlpatterns,
+    *restaurant_urlpatterns,
     *menu_urlpatterns,
 ]

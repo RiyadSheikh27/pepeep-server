@@ -51,6 +51,10 @@ class Restaurant(TimeStampedModel):
     unit_number = models.CharField(max_length=20,  blank=True, default="")
     city = models.CharField(max_length=100, blank=True, default="")
     country = models.CharField(max_length=100, default="Saudi Arabia")
+    
+    # Location coordinates
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, help_text="Restaurant latitude")
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, help_text="Restaurant longitude")
 
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
     is_active = models.BooleanField(default=False, db_index=True)  # activated on approval
