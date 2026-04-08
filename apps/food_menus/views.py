@@ -1,4 +1,3 @@
-# Menu - newly added
 """
 Owner manages their own branch menus.
 """

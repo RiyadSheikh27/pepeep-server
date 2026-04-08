@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from apps.utils.custom_fields import AbsoluteURLImageField, AbsoluteURLFileField
-from .models import Restaurant, RestaurantBankDetail, Branch, BranchOpeningHours
+from .models import Restaurant, RestaurantBankDetail, Branch, BranchOpeningHours, RestaurantCategory    
 
 # --- Opening Hours ------------------------------------------------------------------------
 
@@ -50,11 +50,18 @@ GET - RestaurantSerializer(restaurant)
 PATCH - RestaurantSerializer(restaurant, data=request.data, partial=True)
 """
 
+class RestaurantCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = RestaurantCategory
+        fields = ["id", "name"]
+        read_only_fields = ["id"]
+
 class RestaurantSerializer(serializers.ModelSerializer):
     bank_detail = RestaurantBankDetailSerializer(read_only=True)
     logo = AbsoluteURLImageField(read_only=True)
     cr_document = AbsoluteURLFileField(read_only=True)
     vat_certificate = AbsoluteURLFileField(read_only=True)
+    category = RestaurantCategorySerializer(read_only=True, many=False)
 
     class Meta:
         model  = Restaurant

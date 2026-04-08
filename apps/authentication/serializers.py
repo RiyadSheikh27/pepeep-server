@@ -2,10 +2,11 @@ from rest_framework import serializers
 from apps.utils.custom_fields import AbsoluteURLImageField, AbsoluteURLFileField
 
 from apps.utils.validators import validate_sa_phone
-from apps.restaurants.models import Branch, Employee, Restaurant, RestaurantBankDetail
+from apps.restaurants.models import Branch, Employee, Restaurant, RestaurantBankDetail, RestaurantCategory
 from apps.restaurants.serializers import (
     RestaurantSerializer, RestaurantBankDetailSerializer,
     BranchDetailSerializer,
+    RestaurantCategorySerializer,
 )
 from .models import User
 
@@ -190,10 +191,11 @@ class OwnerRegSubmitSerializer(serializers.Serializer):
     phone_verification_token = serializers.CharField()
 
     # Step 2 - restaurant brand
-    legal_name        = serializers.CharField(max_length=200)
-    brand_name        = serializers.CharField(max_length=200)
-    category          = serializers.ChoiceField(choices=Restaurant.Category.choices)
-    logo              = serializers.ImageField(required=False, allow_null=True)
+    legal_name = serializers.CharField(max_length=200)
+    brand_name = serializers.CharField(max_length=200)
+    category = serializers.PrimaryKeyRelatedField(queryset=RestaurantCategory.objects.all(), required=False, allow_null=True)
+
+    logo = serializers.ImageField(required=False, allow_null=True)
     short_description = serializers.CharField(max_length=500, required=False, allow_blank=True)
 
     # Step 3 - legal

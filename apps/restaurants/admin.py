@@ -6,6 +6,7 @@ from .models import (
     BranchOpeningHours,
     RestaurantBankDetail,
     Employee,
+    RestaurantCategory,
 )
 
 
@@ -80,6 +81,13 @@ class BranchAdmin(admin.ModelAdmin):
     list_filter = ['is_active', 'city']
     search_fields = ['name', 'restaurant__brand_name', 'full_address']
     raw_id_fields = ['restaurant']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(RestaurantCategory)
+class RestaurantCategoryAdmin(admin.ModelAdmin):
+    list_display = ['name', 'id']
+    search_fields = ['name']
     readonly_fields = ['created_at', 'updated_at']
 
 

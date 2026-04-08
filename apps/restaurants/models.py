@@ -3,19 +3,19 @@ from apps.utils.models import TimeStampedModel
 
 # --- Restaurant Section -----------------------------------------------------------------------
 
-class Restaurant(TimeStampedModel):
+class RestaurantCategory(TimeStampedModel):
+    name = models.CharField(max_length=100, unique=True)
+    icon = models.ImageField(upload_to="restaurant_categories/icons/%Y/%m/", null=True, blank=True)
+    banner = models.ImageField(upload_to="restaurant_categories/banners/%Y/%m/", null=True, blank=True)
 
-    class Category(models.TextChoices):
-        FAST_FOOD = "fast_food", "Fast Food"
-        CASUAL = "casual", "Casual Dining"
-        FINE_DINING = "fine_dining", "Fine Dining"
-        CAFE = "cafe", "Café"
-        BAKERY = "bakery", "Bakery"
-        PIZZA = "pizza", "Pizza"
-        SUSHI = "sushi", "Sushi"
-        SHAWARMA = "shawarma", "Shawarma"
-        SEAFOOD = "seafood", "Seafood"
-        OTHER = "other", "Other"
+    class Meta:
+        db_table = "restaurant_categories"
+
+    def __str__(self):
+        return self.name
+
+
+class Restaurant(TimeStampedModel):
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -31,7 +31,7 @@ class Restaurant(TimeStampedModel):
     # Brand
     legal_name = models.CharField(max_length=200)
     brand_name = models.CharField(max_length=200)
-    category = models.CharField(max_length=50, choices=Category.choices, default=Category.OTHER)
+    category = models.ForeignKey(RestaurantCategory, on_delete=models.SET_NULL, null=True, related_name="restaurants")
     logo = models.ImageField(upload_to="restaurants/logos/%Y/%m/", null=True, blank=True)
     short_description = models.TextField(blank=True, default="")
 

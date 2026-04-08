@@ -24,3 +24,4 @@ class NormalizeContentTypeMiddleware:
         
         response = self.get_response(request)
         return response
+

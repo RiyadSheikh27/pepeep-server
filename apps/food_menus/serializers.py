@@ -126,7 +126,6 @@ class MenuCategoryDetailSerializer(serializers.ModelSerializer):
     """
 
     items = MenuItemDetailSerializer(many=True, read_only=True)
-    # item_count = serializers.IntegerField(read_only=True)   # annotated
  
     class Meta:
         model  = MenuCategory

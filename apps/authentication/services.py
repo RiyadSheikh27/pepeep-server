@@ -253,29 +253,39 @@ class OwnerAuthService:
             is_phone_verified=True,
         )
 
-        restaurant = Restaurant.objects.create(
-            owner=user,
-            legal_name=data["legal_name"],
-            brand_name=data["brand_name"],
-            category=data["category"],
-            logo=data.get("logo"),
-            short_description=data.get("short_description", ""),
-            cr_number=data["cr_number"],
-            vat_number=data["vat_number"],
-            cr_document=data["cr_document"],
-            vat_certificate=data["vat_certificate"],
-            short_address=data.get("short_address", ""),
-            street_name=data["street_name"],
-            building_number=data["building_number"],
-            building_secondary_number=data.get("building_secondary_number", ""),
-            district=data["district"],
-            postal_code=data["postal_code"],
-            unit_number=data.get("unit_number", ""),
-            city=data["city"],
-            country=data.get("country", "Saudi Arabia"),
-            status=Restaurant.Status.PENDING,
-            is_active=False,
-        )
+        restaurant_data = {
+            "owner": user,
+            "legal_name": data["legal_name"],
+            "brand_name": data["brand_name"],
+            "logo": data.get("logo"),
+            "short_description": data.get("short_description", ""),
+            "cr_number": data["cr_number"],
+            "vat_number": data["vat_number"],
+            "cr_document": data["cr_document"],
+            "vat_certificate": data["vat_certificate"],
+            "short_address": data.get("short_address", ""),
+            "street_name": data["street_name"],
+            "building_number": data["building_number"],
+            "building_secondary_number": data.get("building_secondary_number", ""),
+            "district": data["district"],
+            "postal_code": data["postal_code"],
+            "unit_number": data.get("unit_number", ""),
+            "city": data["city"],
+            "country": data.get("country", "Saudi Arabia"),
+            "status": Restaurant.Status.PENDING,
+            "is_active": False,
+        }
+        
+        # Use provided category or default to "General"
+        if data.get("category") is not None:
+            restaurant_data["category"] = data["category"]
+        else:
+            from apps.restaurants.models import RestaurantCategory
+            default_category = RestaurantCategory.objects.filter(name="General").first()
+            if default_category:
+                restaurant_data["category"] = default_category
+        
+        restaurant = Restaurant.objects.create(**restaurant_data)
 
         _create_branches(restaurant, branches)
 

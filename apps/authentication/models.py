@@ -24,6 +24,7 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     avatar = models.ImageField(upload_to="avatars/%Y/%m/", null=True, blank=True)
 
     role = models.CharField(max_length=20, choices=Role.choices, db_index=True)
+    permissions = models.JSONField(default=list, blank=True, help_text="List of permissions for this user")
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_phone_verified = models.BooleanField(default=False)
