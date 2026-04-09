@@ -87,9 +87,11 @@ class BranchAdmin(admin.ModelAdmin):
 
 @admin.register(RestaurantCategory)
 class RestaurantCategoryAdmin(admin.ModelAdmin):
-    list_display = ['name', 'id']
+    list_display = ['name', 'sort_order', 'id']
+    list_editable = ['sort_order']
     search_fields = ['name']
     readonly_fields = ['created_at', 'updated_at']
+    ordering = ['sort_order', 'name']
 
 
 class BranchOpeningHoursInline(admin.TabularInline):

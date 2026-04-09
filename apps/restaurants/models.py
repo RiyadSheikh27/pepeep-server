@@ -7,9 +7,11 @@ class RestaurantCategory(TimeStampedModel):
     name = models.CharField(max_length=100, unique=True)
     icon = models.ImageField(upload_to="restaurant_categories/icons/%Y/%m/", null=True, blank=True)
     banner = models.ImageField(upload_to="restaurant_categories/banners/%Y/%m/", null=True, blank=True)
+    sort_order = models.PositiveSmallIntegerField(default=0, db_index=True)
 
     class Meta:
         db_table = "restaurant_categories"
+        ordering = ["sort_order", "name"]
 
     def __str__(self):
         return self.name
@@ -40,7 +42,6 @@ class Restaurant(TimeStampedModel):
     vat_number = models.CharField(max_length=20, blank=True, default="")
     cr_document = models.FileField(upload_to="restaurants/docs/cr/%Y/%m/", null=True, blank=True)
     vat_certificate = models.FileField(upload_to="restaurants/docs/vat/%Y/%m/", null=True, blank=True)
-
     # Address
     short_address = models.CharField(max_length=200, blank=True, default="")
     street_name = models.CharField(max_length=200, blank=True, default="")
@@ -93,12 +94,14 @@ class RestaurantBankDetail(TimeStampedModel):
 
 
 # ---Branch Section --------------------------------------------------------------------------------
-
 class Branch(TimeStampedModel):
     restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name="branches")
     name = models.CharField(max_length=200)
     city = models.CharField(max_length=100, blank=True, default="")
     full_address = models.CharField(max_length=300, blank=True, default="")
+    phone = models.CharField(max_length=20, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
+    closing_day = models.CharField(max_length=100, blank=True, default="")
     min_order = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     is_active = models.BooleanField(default=False, db_index=True)  # activated on approval
 

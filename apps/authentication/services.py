@@ -263,6 +263,9 @@ class OwnerAuthService:
             "vat_number": data["vat_number"],
             "cr_document": data["cr_document"],
             "vat_certificate": data["vat_certificate"],
+            "latitude": data.get("latitude"),
+            "longitude": data.get("longitude"),
+
             "short_address": data.get("short_address", ""),
             "street_name": data["street_name"],
             "building_number": data["building_number"],

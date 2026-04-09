@@ -7,6 +7,7 @@ from apps.authentication.services import NotFound as AuthNotFound
 
 from .models import MenuItem
 from .serializers import (
+    RestaurantCategoryMenuSerializer,
     MenuCategoryListSerializer,
     MenuCategoryDetailSerializer,
     MenuCategoryWriteSerializer,
@@ -18,6 +19,7 @@ from .serializers import (
     ModifierOptionSerializer,
 )
 from .services import (
+    RestaurantCategoryMenuService,
     MenuCategoryService,
     MenuItemService,
     ModifierGroupService,
@@ -37,6 +39,24 @@ def _menu_handle(exc):
         message=str(exc),
         status_code=getattr(exc, "status_code", 400),
     )
+
+class MenuByCategoryView(APIView):
+    """
+    GET /menu/branches/{branch_id}/categories/
+    Returns all RestaurantCategories that have items in this branch,
+    with full item → modifier group → option nesting.
+    """
+    permission_classes = [IsAuthenticated, IsOwner]
+
+    def get(self, request, branch_id):
+        branch, err = _resolve_branch(request, branch_id)
+        if err:
+            return err
+        categories = RestaurantCategoryMenuService.list_categories_with_items(branch)
+        return APIResponse.success(
+            data=RestaurantCategoryMenuSerializer(categories, many=True).data,
+            meta={"count": categories.count()},
+        )
 
 
 def _resolve_branch(request, branch_id):
@@ -174,20 +194,31 @@ class MenuItemListCreateView(APIView):
         branch, err = _resolve_branch(request, branch_id)
         if err:
             return err
+        
         s = MenuItemWriteSerializer(
             data=request.data,
             context={"request": request, "branch": branch},
         )
         if not s.is_valid():
-            return APIResponse.error(errors=s.errors, message="Invalid input.")
-        #  category is resolved by the serializer into validated_data["category"]
-        category = s.validated_data.pop("category")
-        item = MenuItemService.create_item(branch, category, {**s.validated_data, "category": category})
-        return APIResponse.success(
-            message="Item created. You can now add modifier groups (step 2).",
-            data=MenuItemListSerializer(item).data,
-            status_code=201,
-        )
+            return APIResponse.error(
+                errors=s.errors,
+                message="Invalid input."
+            )
+        
+        try:
+            # category is resolved by the serializer into validated_data["category"]
+            item = MenuItemService.create_item(branch, None, s.validated_data)
+            return APIResponse.success(
+                message="Item created. You can now add modifier groups (step 2).",
+                data=MenuItemListSerializer(item).data,
+                status_code=201,
+            )
+        except Exception as e:
+            error_msg = str(e)
+            return APIResponse.error(
+                errors={"detail": [error_msg]},
+                message=error_msg if error_msg else "Failed to create menu item."
+            )
 
 
 class MenuItemDetailView(APIView):

@@ -125,7 +125,7 @@ class BranchLoginSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = Branch
-        fields = ["id", "name", "city", "restaurant_name"]
+        fields = ["id", "name", "city", "phone", "email", "closing_day", "restaurant_name"]
 
 
 # --- Opening Hours write serializers (input/validation only -- no model backing)-----------------
@@ -166,6 +166,9 @@ class BranchCreateSerializer(serializers.Serializer):
     full_address = serializers.CharField(max_length=300)
     min_order = serializers.DecimalField(max_digits=8, decimal_places=2)
     opening_hours = OpeningHoursWriteSerializer(many=True, required=False, default=list)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    closing_day = serializers.CharField(max_length=100, required=False, allow_blank=True)
 
     def validate_opening_hours(self, hours):
         days = [h["day"] for h in hours]
@@ -203,6 +206,9 @@ class OwnerRegSubmitSerializer(serializers.Serializer):
     vat_number = serializers.CharField(max_length=20)
     cr_document = serializers.FileField()
     vat_certificate = serializers.FileField()
+
+    latitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
+    longitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
 
     # Step 3 - address
     short_address = serializers.CharField(max_length=200, required=False, allow_blank=True)

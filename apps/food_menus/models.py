@@ -1,6 +1,6 @@
 from django.db import models
 from apps.utils.models import TimeStampedModel
-from apps.restaurants.models import Branch
+from apps.restaurants.models import Branch, RestaurantCategory
 
 # --- Menu Section --------------------------------------------------------------------------------
 
@@ -31,6 +31,7 @@ class MenuItem(TimeStampedModel):
     ]
     
     branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="menu_items")
+    category = models.ForeignKey(RestaurantCategory, on_delete=models.CASCADE, related_name="items", null=True, blank=True)
     name = models.CharField(max_length=200)
     photo = models.FileField(upload_to="menu/items/%Y/%m", null=True, blank=True)
     price = models.DecimalField(max_digits=8, decimal_places=2)

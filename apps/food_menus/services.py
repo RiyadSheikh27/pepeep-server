@@ -7,7 +7,7 @@ import logging
 from django.db import transaction
 from django.db.models import Count, Prefetch
 
-from apps.restaurants.models import Branch
+from apps.restaurants.models import Branch, RestaurantCategory
 from .models import MenuCategory, MenuItem, ModifierGroup, ModifierOption
 
 log = logging.getLogger(__name__)
@@ -196,11 +196,41 @@ class MenuItemService:
 
     @staticmethod
     @transaction.atomic
-    def create_item(branch: Branch, category: MenuCategory, data: dict) -> MenuItem:
+    def create_item(branch: Branch, category, data: dict) -> MenuItem:
         """
-        create the item. Modifier groups are added separately.
+        Create a menu item. The category (RestaurantCategory) is in the data dict.
+        Modifier groups are added separately.
         """
-        return MenuItem.objects.create(branch=branch, **data)
+        try:
+            # Log data for debugging
+            log.info(f"Creating MenuItem - branch={branch.id}, data keys={list(data.keys())}")
+            
+            # Ensure branch exists
+            if not Branch.objects.filter(id=branch.id).exists():
+                raise MenuError(f"Branch with ID {branch.id} does not exist.")
+            
+            # Validate category if provided
+            cat = data.get("category")
+            if cat:
+                cat_id = cat.id if hasattr(cat, "id") else cat
+                log.info(f"Validating category: {cat_id}")
+                
+                if not RestaurantCategory.objects.filter(id=cat_id).exists():
+                    raise MenuError(f"Restaurant category with ID {cat_id} does not exist.")
+            
+            # Create the item
+            log.info(f"Creating menu item with: branch={branch.id}, category={cat}, name={data.get('name')}")
+            item = MenuItem.objects.create(branch=branch, **data)
+            log.info(f"Menu item created: {item.id}")
+            return item
+            
+        except MenuError:
+            raise
+        except Exception as e:
+            log.error(f"Failed to create menu item: {str(e)}", exc_info=True)
+            if "FOREIGN KEY constraint" in str(e):
+                raise MenuError(f"Foreign key constraint failed. Check that branch and category exist and are valid.")
+            raise MenuError(f"Failed to create menu item: {str(e)}")
 
     @staticmethod
     @transaction.atomic
@@ -315,3 +345,42 @@ class ModifierOptionService:
         option = _get_option(group, option_id)
         option.delete()
         log.info("Modifier option deleted: id=%s group=%s", option_id, group_id)
+
+
+# Restaurant Category Service -----------------------------------------------------------------------
+class RestaurantCategoryMenuService:
+    """Browse menu items grouped by RestaurantCategory for a branch."""
+
+    @staticmethod
+    def list_categories_with_items(branch: Branch):
+        """
+        All RestaurantCategories that have items in this branch,
+        with nested items → modifier groups → options.
+        """
+        return (
+            RestaurantCategory.objects
+            .filter(items__branch=branch)
+            .distinct()
+            .prefetch_related(
+                Prefetch(
+                    "items",
+                    queryset=MenuItem.objects
+                        .filter(branch=branch)
+                        .order_by("sort_order", "name")
+                        .prefetch_related(
+                            Prefetch(
+                                "modifier_groups",
+                                queryset=ModifierGroup.objects
+                                    .order_by("sort_order", "name")
+                                    .annotate(option_count=Count("options"))
+                                    .prefetch_related(
+                                        Prefetch(
+                                            "options",
+                                            queryset=ModifierOption.objects.order_by("sort_order", "name"),
+                                        )
+                                    ),
+                            )
+                        ),
+                )
+            )
+        )

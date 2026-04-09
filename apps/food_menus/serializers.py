@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from apps.utils.custom_fields import AbsoluteURLImageField
 from .models import MenuCategory, MenuItem, ModifierGroup, ModifierOption
+from apps.restaurants.models import RestaurantCategory
 
 # --- Modifier Options Serializers Section ----------------------------------------------
 
@@ -47,8 +48,8 @@ class ModifierGroupWriteSerializer(serializers.ModelSerializer):
 DIETARY_VALUES = [v for v, _ in MenuItem.DIETARY_CHOICES]
 
 class MenuItemListSerializer(serializers.ModelSerializer):
-    """ Category Item List """
-    category_name = serializers.CharField(source="category.name", read_only=True)
+    category_name = serializers.SerializerMethodField()
+    category_id = serializers.SerializerMethodField()
     photo = AbsoluteURLImageField(read_only=True)
 
     class Meta:
@@ -56,15 +57,27 @@ class MenuItemListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "photo", "price", "description",
             "extra_prep_time", "calories", "dietary_info",
-            "is_available", "sort_order", "category_name",
+            "is_available", "sort_order", "category_id", "category_name",
         ]
-        read_only_fields = ["id", "category_name"]
+        read_only_fields = fields
+
+    def get_category_name(self, obj):
+        return obj.category.name if obj.category else None
+    
+    def get_category_id(self, obj):
+        return str(obj.category.id) if obj.category else None
 
 class MenuItemDetailSerializer(serializers.ModelSerializer):
-    """ Full details serializer of Menus with their groups and options """
-    category_name   = serializers.CharField(source="category.name", read_only=True)
+    category_name   = serializers.SerializerMethodField()
+    category_id     = serializers.SerializerMethodField()
     modifier_groups = ModifierGroupSerializer(many=True, read_only=True)
     photo = AbsoluteURLImageField(read_only=True)
+    
+    def get_category_name(self, obj):
+        return obj.category.name if obj.category else None
+    
+    def get_category_id(self, obj):
+        return str(obj.category.id) if obj.category else None
 
     class Meta:
         model  = MenuItem
@@ -72,14 +85,17 @@ class MenuItemDetailSerializer(serializers.ModelSerializer):
             "id", "name", "photo", "price", "description",
             "extra_prep_time", "calories", "dietary_info",
             "is_available", "sort_order",
-            "category_name", "modifier_groups",
+            "category_id", "category_name", "modifier_groups",
         ]
-        read_only_fields = ["id", "category_name", "modifier_groups"]
+        read_only_fields = ["id", "category_id", "category_name", "modifier_groups"]
 
 class MenuItemWriteSerializer(serializers.ModelSerializer):
-    """ Add item flow """
-
-    category_id = serializers.PrimaryKeyRelatedField(queryset=MenuCategory.objects.none(), source="category", write_only=True)  
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=RestaurantCategory.objects.all(),
+        source="category",
+        write_only=True,
+        required=True
+    )
 
     class Meta:
         model  = MenuItem
@@ -90,20 +106,28 @@ class MenuItemWriteSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id"]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # restrict category choices to the branch being managed
-        request = self.context.get("request")
-        branch  = self.context.get("branch")
-        if branch:
-            self.fields["category_id"].queryset = MenuCategory.objects.filter(branch=branch)
- 
+    def validate_category_id(self, value):
+        """Validate that the category exists"""
+        if not value:
+            raise serializers.ValidationError("Category is required.")
+        
+        if not RestaurantCategory.objects.filter(id=value.id).exists():
+            raise serializers.ValidationError(f"Restaurant category with ID {value.id} does not exist.")
+        
+        return value
+
     def validate_dietary_info(self, v):
-        # reject any unknown dietary tags
+        """Validate dietary info tags"""
         invalid = set(v) - set(DIETARY_VALUES)
         if invalid:
             raise serializers.ValidationError(f"Invalid dietary tags: {sorted(invalid)}.")
-        return list(set(v))   # deduplicate
+        return list(set(v)) if v else []
+
+    def validate_dietary_info(self, v):
+        invalid = set(v) - set(DIETARY_VALUES)
+        if invalid:
+            raise serializers.ValidationError(f"Invalid dietary tags: {sorted(invalid)}.")
+        return list(set(v))
     
 # --- MenuCategory Serializers Section ------------------------------------------------
 
@@ -158,3 +182,14 @@ class MenuCategoryWriteSerializer(serializers.ModelSerializer):
                 f"A category named '{value}' already exists for this branch."
             )
         return value
+    
+# --- RestaurantCategory + items (replaces MenuCategory) ----------------------
+
+class RestaurantCategoryMenuSerializer(serializers.ModelSerializer):
+    """Category detail with its menu items and modifier groups."""
+    items = MenuItemDetailSerializer(many=True, read_only=True)
+
+    class Meta:
+        model  = RestaurantCategory
+        fields = ["id", "name", "items"]
+        read_only_fields = ["id", "items"]

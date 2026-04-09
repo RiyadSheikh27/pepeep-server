@@ -64,7 +64,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
         model  = Restaurant
         fields = [
             "id", "brand_name", "legal_name", "category", "logo", "short_description",
-            "cr_number", "vat_number", "cr_document", "vat_certificate",
+            "cr_number", "vat_number", "cr_document", "vat_certificate", "latitude", "longitude",
             "short_address", "street_name", "building_number", "building_secondary_number",
             "district", "postal_code", "unit_number", "city", "country",
             "status", "is_active",
@@ -95,7 +95,7 @@ class BranchListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = Branch
-        fields = ["id", "name", "city", "full_address", "min_order", "is_active", "restaurant_name", "created_at"]
+        fields = ["id", "name", "city", "full_address", "phone", "email", "closing_day", "is_active", "restaurant_name", "created_at"]
 
 
 # --- Restaurant Category Serializers ---------------------------------------------------------------
@@ -163,3 +163,4 @@ class RestaurantSearchSerializer(serializers.ModelSerializer):
     def get_distance_km(self, obj):
         """Returns distance in km rounded to 2 decimal places, or null."""
         return getattr(obj, "distance", None)
+    
