@@ -91,7 +91,7 @@ class MenuItemDetailSerializer(serializers.ModelSerializer):
 
 class MenuItemWriteSerializer(serializers.ModelSerializer):
     category_id = serializers.PrimaryKeyRelatedField(
-        queryset=RestaurantCategory.objects.all(),
+        queryset=MenuCategory.objects.all(),
         source="category",
         write_only=True,
         required=True
@@ -107,13 +107,12 @@ class MenuItemWriteSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
     def validate_category_id(self, value):
-        """Validate that the category exists"""
         if not value:
             raise serializers.ValidationError("Category is required.")
-        
-        if not RestaurantCategory.objects.filter(id=value.id).exists():
-            raise serializers.ValidationError(f"Restaurant category with ID {value.id} does not exist.")
-        
+        # Ensure the category belongs to the same branch (context)
+        branch = self.context.get("branch")
+        if branch and not MenuCategory.objects.filter(id=value.id, branch=branch).exists():
+            raise serializers.ValidationError("Category does not belong to this branch.")
         return value
 
     def validate_dietary_info(self, v):

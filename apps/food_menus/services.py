@@ -166,7 +166,6 @@ class MenuItemService:
     @staticmethod
     def get_item_detail(branch: Branch, item_id):
         """
-        Menu - newly added
         Full item with modifier groups → options.
         All fetched in 3 queries (item + groups + options). No N+1.
         """
@@ -198,39 +197,18 @@ class MenuItemService:
     @transaction.atomic
     def create_item(branch: Branch, category, data: dict) -> MenuItem:
         """
-        Create a menu item. The category (RestaurantCategory) is in the data dict.
+        Create a menu item. The category (MenuCategory) is in the data dict.
         Modifier groups are added separately.
         """
-        try:
-            # Log data for debugging
-            log.info(f"Creating MenuItem - branch={branch.id}, data keys={list(data.keys())}")
-            
-            # Ensure branch exists
-            if not Branch.objects.filter(id=branch.id).exists():
-                raise MenuError(f"Branch with ID {branch.id} does not exist.")
-            
-            # Validate category if provided
-            cat = data.get("category")
-            if cat:
-                cat_id = cat.id if hasattr(cat, "id") else cat
-                log.info(f"Validating category: {cat_id}")
-                
-                if not RestaurantCategory.objects.filter(id=cat_id).exists():
-                    raise MenuError(f"Restaurant category with ID {cat_id} does not exist.")
-            
-            # Create the item
-            log.info(f"Creating menu item with: branch={branch.id}, category={cat}, name={data.get('name')}")
-            item = MenuItem.objects.create(branch=branch, **data)
-            log.info(f"Menu item created: {item.id}")
-            return item
-            
-        except MenuError:
-            raise
-        except Exception as e:
-            log.error(f"Failed to create menu item: {str(e)}", exc_info=True)
-            if "FOREIGN KEY constraint" in str(e):
-                raise MenuError(f"Foreign key constraint failed. Check that branch and category exist and are valid.")
-            raise MenuError(f"Failed to create menu item: {str(e)}")
+        cat = data.get("category")
+        if cat:
+            cat_id = cat.id if hasattr(cat, "id") else cat
+            if not MenuCategory.objects.filter(id=cat_id, branch=branch).exists():
+                raise MenuError(f"Menu category with ID {cat_id} does not belong to this branch.")
+    
+        item = MenuItem.objects.create(branch=branch, **data)
+        log.info("Menu item created: id=%s branch=%s", item.id, branch.id)
+        return item
 
     @staticmethod
     @transaction.atomic
