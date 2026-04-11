@@ -289,6 +289,48 @@ class ModifierGroupService:
         group.delete()
         log.info("Modifier group deleted: id=%s item=%s", group_id, item_id)
 
+    @staticmethod
+    @transaction.atomic
+    def bulk_set_modifiers(branch: Branch, item_id, groups_data: list) -> MenuItem:
+        """
+        Replace all modifier groups and options for an item in one shot.
+        Deletes existing groups first, then creates new ones.
+        """
+        item = _get_item(branch, item_id)
+
+        # Delete all existing groups (cascades to options)
+        ModifierGroup.objects.filter(item=item).delete()
+
+        for group_data in groups_data:
+            options_data = group_data.pop("options", [])
+            group = ModifierGroup.objects.create(item=item, **group_data)
+            for option_data in options_data:
+                ModifierOption.objects.create(group=group, **option_data)
+
+        # Return fresh item with all relations
+        return MenuItem.objects.prefetch_related(
+            Prefetch(
+                "modifier_groups",
+                queryset=ModifierGroup.objects
+                    .order_by("sort_order", "name")
+                    .annotate(option_count=Count("options"))
+                    .prefetch_related(
+                        Prefetch(
+                            "options",
+                            queryset=ModifierOption.objects.order_by("sort_order", "name"),
+                        )
+                    ),
+            )
+        ).get(id=item.id)
+
+    @staticmethod
+    @transaction.atomic
+    def delete_all_modifiers(branch: Branch, item_id):
+        """Delete all modifier groups and options for an item."""
+        item = _get_item(branch, item_id)
+        ModifierGroup.objects.filter(item=item).delete()
+        log.info("All modifiers deleted for item: id=%s branch=%s", item_id, branch.id)
+
 
 # --- ModifierOptionService ---------------------------------------------------------
 

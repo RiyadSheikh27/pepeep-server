@@ -192,3 +192,25 @@ class RestaurantCategoryMenuSerializer(serializers.ModelSerializer):
         model  = RestaurantCategory
         fields = ["id", "name", "items"]
         read_only_fields = ["id", "items"]
+
+# --- Bulk Menu Item Add Serializer(Step 2) --------------------------------------------------------------
+
+class ModifierOptionWriteSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=100)
+    price = serializers.DecimalField(max_digits=8, decimal_places=2, default=0)
+    option_type = serializers.ChoiceField(choices=ModifierOption.OptionType.choices, default=ModifierOption.OptionType.FREE)
+    sort_order = serializers.IntegerField(default=0)
+
+
+class ModifierGroupBulkSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=100)
+    type = serializers.ChoiceField(choices=ModifierGroup.Type.choices, default=ModifierGroup.Type.OPTIONAL)
+    min_select = serializers.IntegerField(default=0)
+    max_select = serializers.IntegerField(default=5)
+    sort_order = serializers.IntegerField(default=0)
+    options = ModifierOptionWriteSerializer(many=True, default=list)
+
+    def validate(self, attrs):
+        if attrs["min_select"] > attrs["max_select"]:
+            raise serializers.ValidationError({"min_select": "min_select cannot exceed max_select."})
+        return attrs

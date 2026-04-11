@@ -7,6 +7,7 @@ from apps.authentication.services import NotFound as AuthNotFound
 
 from .models import MenuItem
 from .serializers import (
+    ModifierGroupBulkSerializer,
     RestaurantCategoryMenuSerializer,
     MenuCategoryListSerializer,
     MenuCategoryDetailSerializer,
@@ -431,3 +432,53 @@ class ModifierOptionDetailView(APIView):
         except MenuNotFound as e:
             return _menu_handle(e)
         return APIResponse.success(message="Option deleted.")
+    
+# --- Bulk Menu Item Add (Step 2) --------------------------------------------------------------
+class ModifierBulkView(APIView):
+    """
+    POST   /menu/branches/{branch_id}/items/{item_id}/modifiers/  — add all groups + options at once
+    PUT    /menu/branches/{branch_id}/items/{item_id}/modifiers/  — replace all groups + options
+    DELETE /menu/branches/{branch_id}/items/{item_id}/modifiers/  — delete all groups + options
+    """
+    permission_classes = [IsAuthenticated, IsOwner]
+
+    def _handle_set(self, request, branch_id, item_id):
+        branch, err = _resolve_branch(request, branch_id)
+        if err:
+            return err
+
+        if not isinstance(request.data, list):
+            return APIResponse.error(
+                errors={"detail": ["Payload must be a JSON array of modifier groups."]},
+                message="Invalid input.",
+            )
+
+        s = ModifierGroupBulkSerializer(data=request.data, many=True)
+        if not s.is_valid():
+            return APIResponse.error(errors=s.errors, message="Invalid input.")
+
+        try:
+            item = ModifierGroupService.bulk_set_modifiers(branch, item_id, s.validated_data)
+        except MenuNotFound as e:
+            return _menu_handle(e)
+
+        return APIResponse.success(
+            message="Modifiers saved successfully.",
+            data=MenuItemDetailSerializer(item).data,
+        )
+
+    def post(self, request, branch_id, item_id):
+        return self._handle_set(request, branch_id, item_id)
+
+    def put(self, request, branch_id, item_id):
+        return self._handle_set(request, branch_id, item_id)
+
+    def delete(self, request, branch_id, item_id):
+        branch, err = _resolve_branch(request, branch_id)
+        if err:
+            return err
+        try:
+            ModifierGroupService.delete_all_modifiers(branch, item_id)
+        except MenuNotFound as e:
+            return _menu_handle(e)
+        return APIResponse.success(message="All modifiers deleted.")

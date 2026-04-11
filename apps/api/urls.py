@@ -52,6 +52,7 @@ from apps.food_menus.views import (
     ModifierGroupDetailView,
     ModifierOptionCreateView,
     ModifierOptionDetailView,
+    ModifierBulkView,
 )
 
 auth_urlpatterns = [
@@ -140,6 +141,9 @@ menu_urlpatterns = [
     # --- Modifier Options ----------------------------------------------------------
     path("menu/branches/<uuid:branch_id>/items/<uuid:item_id>/groups/<uuid:group_id>/options/", ModifierOptionCreateView.as_view()),
     path("menu/branches/<uuid:branch_id>/items/<uuid:item_id>/groups/<uuid:group_id>/options/<uuid:option_id>/", ModifierOptionDetailView.as_view()),
+
+    # --- Bulk Modifier Groups & Options ------------------------------------------------
+    path("menu/branches/<uuid:branch_id>/items/<uuid:item_id>/modifiers/", ModifierBulkView.as_view()),
 ]
 
 restaurant_urlpatterns = [
