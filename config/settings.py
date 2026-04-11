@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     'apps.api',
     'apps.restaurants',
     'apps.food_menus',
+    'apps.checkout'
 ]
 
 MIDDLEWARE = [
