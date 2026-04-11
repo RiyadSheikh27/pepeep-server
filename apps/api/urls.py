@@ -55,6 +55,15 @@ from apps.food_menus.views import (
     ModifierBulkView,
 )
 
+from apps.checkout.views import (
+    RestaurantListView,
+    BranchListView,
+    BranchMenuView,
+    CartView,
+    CartItemView,
+)
+
+
 auth_urlpatterns = [
 
     # --- Customer ---------------------------------------------------------------
@@ -156,8 +165,19 @@ restaurant_urlpatterns = [
     path("restaurants/search/", RestaurantSearchView.as_view()),
 ]
 
+checkout_urlpatterns = [
+    
+    # --- Cart & Menu for Cart ------------------------------------------------------
+    path("cart/restaurants/", RestaurantListView.as_view()),
+    path("cart/restaurants/<uuid:restaurant_id>/branches/", BranchListView.as_view()),
+    path("branch/<uuid:branch_id>/menu/", BranchMenuView.as_view()),
+    path("cart/", CartView.as_view()),
+    path("cart/items/<uuid:cart_item_id>/", CartItemView.as_view()),
+]
+
 urlpatterns = [
     *auth_urlpatterns,
     *restaurant_urlpatterns,
     *menu_urlpatterns,
+    *checkout_urlpatterns,
 ]

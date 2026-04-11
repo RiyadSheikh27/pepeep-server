@@ -2,12 +2,12 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
 from rest_framework.response import Response
 from apps.utils.custom_response import APIResponse
-from .services import RestaurantCategoryService, RestaurantSearchService, RestaurantError, RestaurantNotFound
+from .services import RestaurantCategoryService, BranchSearchService, RestaurantError, RestaurantNotFound
 from .serializers import (
     RestaurantCategoryListSerializer,
-    RestaurantCategoryDetailSerializer, 
+    RestaurantCategoryDetailSerializer,
     RestaurantCategoryWriteSerializer,
-    RestaurantSearchSerializer,
+    BranchSearchSerializer,
 )
 
 # --- Shared helper method -----------------------------------------------------------------------
@@ -139,10 +139,10 @@ class RestaurantCategoryDetailView(APIView):
 
 class RestaurantSearchView(APIView):
     """
-    GET /api/restaurants/search/
+    GET /restaurants/search/
     Query params:
-      q           — restaurant name or food/menu item name
-      category_id — UUID of a RestaurantCategory (from /api/v1/categories/)
+      q           — branch name, restaurant name or food name
+      category_id — uuid of RestaurantCategory
       city        — filter by city string
       user_lat    — float, user's latitude
       user_lon    — float, user's longitude
@@ -170,7 +170,7 @@ class RestaurantSearchView(APIView):
             user_lon = None
 
         items, total_count, page_number, total_pages, has_next, has_previous = (
-            RestaurantSearchService.search_restaurants(
+            BranchSearchService.search_branches( 
                 query=query,
                 category_id=category_id,
                 city=city,
@@ -181,7 +181,7 @@ class RestaurantSearchView(APIView):
         )
 
         return APIResponse.success(
-            data=RestaurantSearchSerializer(items, many=True).data,
+            data=BranchSearchSerializer(items, many=True).data, 
             meta={
                 "total": total_count,
                 "page": page_number,

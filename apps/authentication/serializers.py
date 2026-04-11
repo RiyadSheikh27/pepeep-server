@@ -160,7 +160,6 @@ class OpeningHoursWriteSerializer(serializers.Serializer):
 
 
 class BranchCreateSerializer(serializers.Serializer):
-    """Write-only: used for registration and adding new branches."""
     name = serializers.CharField(max_length=200)
     city = serializers.CharField(max_length=100)
     full_address = serializers.CharField(max_length=300)
@@ -169,6 +168,9 @@ class BranchCreateSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
     email = serializers.EmailField(required=False, allow_blank=True)
     closing_day = serializers.CharField(max_length=100, required=False, allow_blank=True)
+
+    latitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
+    longitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
 
     def validate_opening_hours(self, hours):
         days = [h["day"] for h in hours]

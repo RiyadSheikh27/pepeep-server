@@ -103,7 +103,11 @@ class Branch(TimeStampedModel):
     email = models.EmailField(blank=True, default="")
     closing_day = models.CharField(max_length=100, blank=True, default="")
     min_order = models.DecimalField(max_digits=8, decimal_places=2, default=0)
-    is_active = models.BooleanField(default=False, db_index=True)  # activated on approval
+    is_active = models.BooleanField(default=False, db_index=True)
+
+    # --- New fields ---
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
 
     class Meta:
         db_table = "branches"

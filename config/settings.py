@@ -32,7 +32,7 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
 """Security"""
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://austin-ovisaclike-nonoptically.ngrok-free.dev",
+    "http://10.10.13.99:8070",
     "http://localhost:8000",
     "http://0.0.0.0:8000",
     "http://10.10.13.19:8070",
@@ -42,7 +42,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5174",
     "http://localhost:5173",
     "http://localhost:3000",
-    "https://austin-ovisaclike-nonoptically.ngrok-free.dev"
+    "http://10.10.13.99:8070"
 ]
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
@@ -119,7 +119,7 @@ DATABASES = {
 }
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://austin-ovisaclike-nonoptically.ngrok-free.dev",
+    "http://10.10.13.99:8070",
 ]
 
 # Password validation
@@ -244,4 +244,4 @@ SPECTACULAR_SETTINGS = {
     ],
 }
 
-BASE_URL = env("BASE_URL", default="https://austin-ovisaclike-nonoptically.ngrok-free.dev/")
+BASE_URL = env("BASE_URL", default="http://10.10.13.99:8070/")

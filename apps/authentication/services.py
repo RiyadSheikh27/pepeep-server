@@ -665,6 +665,10 @@ def _create_branches(restaurant, branches: list) -> list:
             full_address=b["full_address"],
             min_order=b["min_order"],
             is_active=False,
+
+            # --- New fields ---
+            latitude=b.get("latitude"),
+            longitude=b.get("longitude"),
         )
         _create_opening_hours(branch, b.get("opening_hours", []))
         created.append(branch)

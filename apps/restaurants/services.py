@@ -8,6 +8,7 @@ from decimal import Decimal
 from django.db.models import Count, Prefetch, Q
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from .models import RestaurantCategory
+from django.db import models
 
 log = logging.getLogger(__name__)
 
@@ -132,13 +133,13 @@ class RestaurantCategoryService:
         log.info("Category deleted: id=%s", category_id)
 
 
-# --- RestaurantSearchService -----------------------------------------------------------------------
+# --- Branch SearchService -----------------------------------------------------------------------
 
-class RestaurantSearchService:
+class BranchSearchService:
     PAGE_SIZE = 10
 
     @staticmethod
-    def search_restaurants(
+    def search_branches(
         query: str = "",
         category_id: str = "",
         city: str = "",
@@ -146,53 +147,53 @@ class RestaurantSearchService:
         user_lon: float = None,
         page: int = 1,
     ) -> tuple:
-        from .models import Restaurant
+        from .models import Branch
         from apps.food_menus.models import MenuItem
 
-        base_qs = Restaurant.objects.filter(is_active=True).select_related("category")
+        base_qs = (
+            Branch.objects
+            .filter(is_active=True, restaurant__is_active=True)
+            .select_related("restaurant", "restaurant__category")
+        )
 
         if query:
-            by_name = base_qs.filter(
-                Q(brand_name__icontains=query) | Q(legal_name__icontains=query)
-            )
-            food_restaurant_ids = (
+            # Match branch name, restaurant name or menu item name
+            food_branch_ids = (
                 MenuItem.objects
                 .filter(name__icontains=query)
-                .values_list("branch__restaurant_id", flat=True)
+                .values_list("branch_id", flat=True)
                 .distinct()
             )
-            by_food = base_qs.filter(id__in=food_restaurant_ids)
-            # Union — deduplicated by id
-            combined_ids = set(by_name.values_list("id", flat=True)) | set(food_restaurant_ids)
-            queryset = base_qs.filter(id__in=combined_ids)
-        else:
-            queryset = base_qs
+            base_qs = base_qs.filter(
+                models.Q(name__icontains=query) |
+                models.Q(restaurant__brand_name__icontains=query) |
+                models.Q(id__in=food_branch_ids)
+            )
 
-        # Filter by category id (not name — see view change below)
         if category_id:
-            queryset = queryset.filter(category_id=category_id)
+            base_qs = base_qs.filter(restaurant__category_id=category_id)
 
         if city:
-            queryset = queryset.filter(city__icontains=city)
+            base_qs = base_qs.filter(city__icontains=city)
 
-        restaurants = list(queryset.order_by("-created_at"))
+        branches = list(base_qs.order_by("-created_at"))
 
         # Distance annotation + sort
         if user_lat is not None and user_lon is not None:
-            for r in restaurants:
-                if r.latitude and r.longitude:
-                    r.distance = calculate_distance(
+            for b in branches:
+                if b.latitude and b.longitude:
+                    b.distance = calculate_distance(
                         user_lat, user_lon,
-                        float(r.latitude), float(r.longitude)
+                        float(b.latitude), float(b.longitude)
                     )
                 else:
-                    r.distance = None
-            restaurants.sort(key=lambda x: (x.distance is None, x.distance or 0))
+                    b.distance = None
+            branches.sort(key=lambda x: (x.distance is None, x.distance or 0))
         else:
-            for r in restaurants:
-                r.distance = None
+            for b in branches:
+                b.distance = None
 
-        paginator = Paginator(restaurants, RestaurantSearchService.PAGE_SIZE)
+        paginator = Paginator(branches, BranchSearchService.PAGE_SIZE)
         try:
             page_obj = paginator.page(page)
         except (PageNotAnInteger, EmptyPage):

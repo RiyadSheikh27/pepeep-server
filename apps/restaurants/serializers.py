@@ -18,7 +18,12 @@ class BranchDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = Branch
-        fields = ["id", "name", "city", "full_address", "min_order", "is_active", "opening_hours"]
+        fields = [
+            "id", "name", "city", "full_address", "min_order",
+            "phone", "email", "closing_day",
+            "latitude", "longitude",  
+            "is_active", "opening_hours",
+        ]
         read_only_fields = ["id", "is_active", "opening_hours"]
 
 
@@ -164,3 +169,24 @@ class RestaurantSearchSerializer(serializers.ModelSerializer):
         """Returns distance in km rounded to 2 decimal places, or null."""
         return getattr(obj, "distance", None)
     
+    
+class BranchSearchSerializer(serializers.ModelSerializer):
+    restaurant_name = serializers.CharField(source="restaurant.brand_name", read_only=True)
+    restaurant_id = serializers.UUIDField(source="restaurant.id", read_only=True)
+    category_name = serializers.CharField(source="restaurant.category.name", read_only=True)
+    category_icon = AbsoluteURLImageField(source="restaurant.category.icon", read_only=True)
+    logo = AbsoluteURLImageField(source="restaurant.logo", read_only=True)
+    distance_km = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Branch
+        fields = [
+            "id", "name", "city", "full_address",
+            "phone", "min_order", "latitude", "longitude",
+            "restaurant_id", "restaurant_name",
+            "category_name", "category_icon", "logo",
+            "distance_km",
+        ]
+
+    def get_distance_km(self, obj):
+        return getattr(obj, "distance", None)
