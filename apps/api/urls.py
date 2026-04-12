@@ -190,8 +190,8 @@ checkout_urlpatterns = [
     path("cart/items/<uuid:cart_item_id>/", CartItemView.as_view()),
 
     # --- Customer Cars ---
-    path("customer/cars/", CustomerCarListCreateView.as_view()),
-    path("customer/cars/<uuid:pk>/", CustomerCarDetailView.as_view()),
+    path("user/cars/", CustomerCarListCreateView.as_view()),
+    path("user/cars/<uuid:pk>/", CustomerCarDetailView.as_view()),
 
     # --- Customer Orders ---
     path("orders/place/", PlaceOrderView.as_view()),
