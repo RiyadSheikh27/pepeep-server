@@ -37,12 +37,14 @@ from apps.authentication.views import (
 )
 
 from apps.restaurants.views import (
+    # Restaurant Categories 
     RestaurantCategoryListCreateView,
     RestaurantCategoryDetailView,
     RestaurantSearchView,
 )
 
 from apps.food_menus.views import (
+    # Menu Insert View 
     MenuCategoryListCreateView,
     MenuCategoryDetailView,
     MenuItemListCreateView,
@@ -56,11 +58,24 @@ from apps.food_menus.views import (
 )
 
 from apps.checkout.views import (
-    RestaurantListView,
-    BranchListView,
-    BranchMenuView,
-    CartView,
-    CartItemView,
+    # Cart
+    RestaurantListView, BranchListView, BranchMenuView,
+    CartView, CartItemView,
+    # Cars
+    CustomerCarListCreateView, CustomerCarDetailView,
+    # Customer Orders
+    PlaceOrderView,
+    CustomerOrderListView, CustomerOrderDetailView,
+    CustomerOrderCancelView,
+    CustomerPeepView,
+    CustomerConfirmDeliveryView,
+    CustomerOrderQRView,
+    CustomerOrderRatingView,
+    # Staff Orders
+    StaffOrderListView, StaffOrderDetailView,
+    StaffOrderAcceptView, StaffOrderModifyView,
+    StaffOrderCancelView, StaffOrderReadyView,
+    StaffScanQRView, StaffCashConfirmView,
 )
 
 
@@ -167,12 +182,36 @@ restaurant_urlpatterns = [
 
 checkout_urlpatterns = [
     
-    # --- Cart & Menu for Cart ------------------------------------------------------
+    # --- Cart & Menu browse for Cart ------------------------------------------------------
     path("cart/restaurants/", RestaurantListView.as_view()),
     path("cart/restaurants/<uuid:restaurant_id>/branches/", BranchListView.as_view()),
     path("branch/<uuid:branch_id>/menu/", BranchMenuView.as_view()),
     path("cart/", CartView.as_view()),
     path("cart/items/<uuid:cart_item_id>/", CartItemView.as_view()),
+
+    # --- Customer Cars ---
+    path("customer/cars/", CustomerCarListCreateView.as_view()),
+    path("customer/cars/<uuid:pk>/", CustomerCarDetailView.as_view()),
+
+    # --- Customer Orders ---
+    path("orders/place/", PlaceOrderView.as_view()),
+    path("orders/", CustomerOrderListView.as_view()),
+    path("orders/<uuid:order_id>/", CustomerOrderDetailView.as_view()),
+    path("orders/<uuid:order_id>/cancel/", CustomerOrderCancelView.as_view()),
+    path("orders/<uuid:order_id>/peep/", CustomerPeepView.as_view()),
+    path("orders/<uuid:order_id>/confirm-delivery/", CustomerConfirmDeliveryView.as_view()),
+    path("orders/<uuid:order_id>/qr/", CustomerOrderQRView.as_view()),
+    path("orders/<uuid:order_id>/rate/", CustomerOrderRatingView.as_view()),
+
+    # --- Staff Orders ---
+    path("staff/orders/", StaffOrderListView.as_view()),
+    path("staff/orders/scan-qr/", StaffScanQRView.as_view()),
+    path("staff/orders/<uuid:order_id>/", StaffOrderDetailView.as_view()),
+    path("staff/orders/<uuid:order_id>/accept/", StaffOrderAcceptView.as_view()),
+    path("staff/orders/<uuid:order_id>/modify/", StaffOrderModifyView.as_view()),
+    path("staff/orders/<uuid:order_id>/cancel/", StaffOrderCancelView.as_view()),
+    path("staff/orders/<uuid:order_id>/ready/", StaffOrderReadyView.as_view()),
+    path("staff/orders/<uuid:order_id>/confirm-cash/", StaffCashConfirmView.as_view()),
 ]
 
 urlpatterns = [

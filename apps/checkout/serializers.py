@@ -31,10 +31,10 @@ class SelectedOptionSerializer(serializers.Serializer):
 
 
 class CartItemSerializer(serializers.ModelSerializer):
-    cart_item_id     = serializers.UUIDField(source="id")
-    menu_item_id     = serializers.UUIDField(source="menu_item.id")
-    name             = serializers.CharField(source="menu_item.name")
-    subtotal         = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    cart_item_id = serializers.UUIDField(source="id")
+    menu_item_id = serializers.UUIDField(source="menu_item.id")
+    name = serializers.CharField(source="menu_item.name")
+    subtotal = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     selected_options = serializers.SerializerMethodField()
 
     class Meta:
@@ -51,10 +51,10 @@ class CartItemSerializer(serializers.ModelSerializer):
             try:
                 opt = ModifierOption.objects.select_related("group").get(id=opt_id)
                 options.append({
-                    "id":         str(opt.id),
+                    "id": str(opt.id),
                     "group_name": opt.group.name,
-                    "name":       opt.name,
-                    "price":      str(opt.price),
+                    "name": opt.name,
+                    "price": str(opt.price),
                 })
             except ModifierOption.DoesNotExist:
                 pass
@@ -62,12 +62,12 @@ class CartItemSerializer(serializers.ModelSerializer):
 
 
 class CartSerializer(serializers.ModelSerializer):
-    cart_id         = serializers.UUIDField(source="id")
-    branch_id       = serializers.UUIDField(source="branch.id")
-    branch_name     = serializers.CharField(source="branch.name")
+    cart_id = serializers.UUIDField(source="id")
+    branch_id = serializers.UUIDField(source="branch.id")
+    branch_name = serializers.CharField(source="branch.name")
     restaurant_name = serializers.CharField(source="branch.restaurant.brand_name")
-    items           = CartItemSerializer(many=True, read_only=True)
-    total           = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    items = CartItemSerializer(many=True, read_only=True)
+    total = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
         model  = Cart
@@ -94,10 +94,10 @@ class CustomerCarSerializer(serializers.ModelSerializer):
 # --- Order Serializers --------------------------------------------------------
 
 class PlaceOrderSerializer(serializers.Serializer):
-    branch_id      = serializers.UUIDField()
-    car_id         = serializers.UUIDField()
-    note           = serializers.CharField(required=False, allow_blank=True, default="")
-    pickup_time    = serializers.CharField(max_length=50)
+    branch_id = serializers.UUIDField()
+    car_id = serializers.UUIDField()
+    note = serializers.CharField(required=False, allow_blank=True, default="")
+    pickup_time = serializers.CharField(max_length=50)
     payment_method = serializers.ChoiceField(choices=Order.PaymentMethod.choices)
 
 
@@ -108,13 +108,13 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 
 class OrderSerializer(serializers.ModelSerializer):
-    items       = OrderItemSerializer(many=True, read_only=True)
+    items = OrderItemSerializer(many=True, read_only=True)
     branch_name = serializers.CharField(source="branch.name", read_only=True)
-    car         = CustomerCarSerializer(read_only=True)
+    car = CustomerCarSerializer(read_only=True)
     status_timestamps = serializers.SerializerMethodField()
 
     class Meta:
-        model  = Order
+        model = Order
         fields = [
             "id", "order_number", "status", "payment_method", "payment_status",
             "note", "pickup_time",
@@ -125,19 +125,19 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_status_timestamps(self, obj):
         return {
-            "accepted_at":  obj.accepted_at,
+            "accepted_at": obj.accepted_at,
             "preparing_at": obj.preparing_at,
-            "ready_at":     obj.ready_at,
+            "ready_at": obj.ready_at,
             "delivered_at": obj.delivered_at,
             "cancelled_at": obj.cancelled_at,
         }
 
 
 class OrderListSerializer(serializers.ModelSerializer):
-    branch_name     = serializers.CharField(source="branch.name", read_only=True)
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
     restaurant_name = serializers.CharField(source="branch.restaurant.brand_name", read_only=True)
-    item_count      = serializers.SerializerMethodField()
-    car             = CustomerCarSerializer(read_only=True)
+    item_count = serializers.SerializerMethodField()
+    car = CustomerCarSerializer(read_only=True)
 
     class Meta:
         model  = Order
