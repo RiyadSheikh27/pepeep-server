@@ -1,0 +1,46 @@
+[33m96bd766[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m remove env from tracking
+[33m48eff24[m checkout section
+[33m49eb20e[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m changes in db and urls for checkout section
+[33m2187b4a[m checkout sections's logic and serializer section
+[33mcfb0102[m model design for checkout section
+[33m9c75b88[m complete add to cart section
+[33mc514d72[m model for cart section
+[33m24cf287[m bulk menu step 2 upload section
+[33mee52aa1[m changes in settings and new req.txt
+[33mabb2b48[m changes in menu section
+[33m344ef32[m changes in menu item upload section
+[33m0362882[m added nearest restuarant searching apis
+[33mf6c68f2[m added new model for menu category and related changes for this
+[33m4658439[m deleted three unnecessary apps
+[33m53c165f[m updated requirements.txt and some short adjustments
+[33m597ce9c[m Custom url field serializer
+[33m9bd7c20[m formatting in code
+[33m81788a7[m service, views and url section for menus app
+[33m6ab888d[m model and serializer section for food menus
+[33m6c4a490[m code formatting
+[33me837c20[m refined api/url file
+[33m649e05a[m Changes in formatting
+[33m6459f41[m deleted one of file folder from root
+[33m7c3ee2f[m user list section
+[33m076921a[m patch methods on restaurant section
+[33m9a33b74[m refined authentication system
+[33m4b9c9b0[m changes in authentication
+[33m2b1db03[m Merge branch 'main' of https://github.com/RiyadSheikh27/pepeep-server
+[33m9cf7b6c[m added requirements.txt and gitignore
+[33m287db75[m Delete env directory
+[33m2efa2ca[m complete authentication system
+[33m01365f6[m Views,k service and url section
+[33me1357d0[m services section in authentication section
+[33m04107a2[m models for restaurant section
+[33m0bdce8a[m admin for authentication
+[33m73c0bf9[m model for authentication
+[33mb4d8d84[m model of authentication
+[33m03faf07[m User model section
+[33mfe49e32[m Modified comments in each file
+[33m406382a[m custom validators setup
+[33m137502d[m custom expectations handler
+[33m14d58ab[m custom response class design
+[33mfecc64e[m Merge branch 'main' of https://github.com/RiyadSheikh27/pepeep-server
+[33m69aa730[m Base id and timestamp handler and soft delete mixin section
+[33m4a15b35[m Create README.md with project overview and setup
+[33mbaa5e2f[m initial commit
