@@ -1,97 +1,137 @@
+"""
+All ordering business logic lives here.
+No service layer — views own the logic as specified.
+"""
+import math
 import secrets
 from decimal import Decimal
-from django.utils import timezone
 from django.db import transaction
+from django.utils import timezone
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 
 from apps.utils.custom_response import APIResponse
-from apps.authentication.permissions import IsCustomer, IsEmployee, IsOwner, IsAdmin, IsOwnerOrAdmin
-from apps.restaurants.models import Branch, Restaurant
+from apps.authentication.permissions import IsCustomer, IsEmployee, IsOwner, IsAdmin
+from apps.restaurants.models import Branch
 from apps.food_menus.models import MenuItem, ModifierOption, ModifierGroup
-from .models import Cart, CartItem, CustomerCar, Order, OrderItem, OrderRating
-from .serializers import (
-    AddToCartSerializer, UpdateCartItemSerializer, ClearCartSerializer,
-    CartSerializer, CustomerCarSerializer,
-    PlaceOrderSerializer, OrderSerializer, OrderListSerializer,
-    CashConfirmSerializer, OrderStatusUpdateSerializer, OrderRatingSerializer,
-)
 
-# --- Constants ----------------------------------------------------------------
+from .models import Car, Cart, CartItem, Order, OrderItem, Payment, Feedback
+from .serializers import (
+    # car
+    CarSerializer,
+    # cart
+    AddToCartSerializer, UpdateCartItemSerializer, ClearCartSerializer, CartSerializer,
+    # checkout
+    CheckoutInitSerializer, ConfirmOrderSerializer,
+    # order
+    OrderSerializer, OrderListSerializer, OrderETASerializer,
+    # employee actions
+    AcceptOrderSerializer, UpdateStatusSerializer, CancelOrderSerializer,
+    CashReceiveSerializer, QRScanSerializer,
+    # user actions
+    MarkArrivedSerializer, FeedbackSerializer,
+)
+from .tasks import mark_user_arrived
+
+# ─────────────────────────────────────────────
+#  CONSTANTS
+# ─────────────────────────────────────────────
+
 SERVICE_FEE = Decimal("5.00")
 VAT_RATE    = Decimal("0.15")
 
+# Average driving speed used for ETA mock (km/h)
+AVG_SPEED_KMH = 40.0
 
-# --- Helpers ------------------------------------------------------------------
 
-def _calculate_options_price(selected_option_ids: list, item: MenuItem):
+# ─────────────────────────────────────────────
+#  PRIVATE HELPERS
+# ─────────────────────────────────────────────
+
+def _haversine_km(lat1, lon1, lat2, lon2) -> float | None:
+    """Return great-circle distance in km, or None if any coord is missing."""
+    if not all([lat1, lon1, lat2, lon2]):
+        return None
+    R = 6371.0
+    lat1, lon1, lat2, lon2 = map(math.radians, [float(lat1), float(lon1), float(lat2), float(lon2)])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return round(R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)), 2)
+
+
+def _validate_options(selected_option_ids: list, item: MenuItem):
+    """
+    Validate selected modifier options against the item's modifier groups.
+    Returns (total_options_price, validated_id_strings) or raises ValueError.
+    """
     if not selected_option_ids:
         required_groups = ModifierGroup.objects.filter(item=item, type="required")
         if required_groups.exists():
-            raise ValueError(
-                f"Please select options for required groups: "
-                f"{', '.join(required_groups.values_list('name', flat=True))}"
-            )
+            names = ", ".join(required_groups.values_list("name", flat=True))
+            raise ValueError(f"Please select options for required groups: {names}")
         return Decimal("0.00"), []
 
     groups = ModifierGroup.objects.filter(item=item).prefetch_related("options")
-    all_options = {}
-    for group in groups:
-        for opt in group.options.all():
-            all_options[str(opt.id)] = (opt, group)
+    option_map = {}
+    for g in groups:
+        for opt in g.options.all():
+            option_map[str(opt.id)] = (opt, g)
 
-    group_selection_count = {}
-    validated_ids = []
+    group_count = {}
+    validated   = []
     total_price = Decimal("0.00")
 
-    for opt_id in selected_option_ids:
-        opt_id = str(opt_id)
-        if opt_id not in all_options:
-            raise ValueError(f"Option {opt_id} does not belong to this menu item.")
-        opt, group = all_options[opt_id]
-        group_id = str(group.id)
-        group_selection_count[group_id] = group_selection_count.get(group_id, 0) + 1
-        validated_ids.append(opt_id)
+    for raw_id in selected_option_ids:
+        oid = str(raw_id)
+        if oid not in option_map:
+            raise ValueError(f"Option {oid} does not belong to this menu item.")
+        opt, group = option_map[oid]
+        gid = str(group.id)
+        group_count[gid] = group_count.get(gid, 0) + 1
+        validated.append(oid)
         total_price += opt.price
 
-    for group in groups:
-        group_id = str(group.id)
-        count = group_selection_count.get(group_id, 0)
-        if group.type == "required" and count < group.min_select:
-            raise ValueError(f"Group '{group.name}' requires at least {group.min_select} selection(s).")
-        if count > group.max_select:
-            raise ValueError(f"Group '{group.name}' allows at most {group.max_select} selection(s).")
+    for g in groups:
+        gid   = str(g.id)
+        count = group_count.get(gid, 0)
+        if g.type == "required" and count < g.min_select:
+            raise ValueError(f"Group '{g.name}' requires at least {g.min_select} selection(s).")
+        if count > g.max_select:
+            raise ValueError(f"Group '{g.name}' allows at most {g.max_select} selection(s).")
 
-    return total_price, validated_ids
+    return total_price, validated
 
 
 def _build_order_snapshot(cart: Cart):
-    """Build order items snapshot from cart."""
+    """Snapshot cart into order-item dicts. Returns (items_data, subtotal)."""
     items_data = []
-    subtotal = Decimal("0.00")
+    subtotal   = Decimal("0.00")
+
     for ci in cart.items.select_related("menu_item").all():
-        option_names = []
-        for opt_id in ci.selected_options:
+        opt_snapshots = []
+        for oid in ci.selected_options:
             try:
-                opt = ModifierOption.objects.get(id=opt_id)
-                option_names.append({"name": opt.name, "price": str(opt.price)})
+                opt = ModifierOption.objects.get(id=oid)
+                opt_snapshots.append({"name": opt.name, "price": str(opt.price)})
             except ModifierOption.DoesNotExist:
                 pass
-        item_subtotal = (ci.item_price + ci.options_price) * ci.quantity
-        subtotal += item_subtotal
+
+        line = (ci.item_price + ci.options_price) * ci.quantity
+        subtotal += line
         items_data.append({
             "menu_item":       ci.menu_item,
             "name":            ci.menu_item.name,
             "price":           ci.item_price,
             "options_price":   ci.options_price,
             "quantity":        ci.quantity,
-            "selected_options": option_names,
+            "selected_options": opt_snapshots,
         })
     return items_data, subtotal
 
 
-def _can_manage_order(user, order):
-    """Check if employee/owner/admin can manage this order."""
+def _can_manage(user, order) -> bool:
+    """True if user has authority over the order."""
     if user.role == "admin":
         return True
     if user.role == "owner":
@@ -102,179 +142,107 @@ def _can_manage_order(user, order):
     return False
 
 
-# --- CUSTOMER CAR VIEWS ------------------------------------------------------------------
+def _order_or_404(order_id, extra_filter=None):
+    """Fetch order with related data or return None."""
+    qs = (
+        Order.objects
+        .select_related("branch", "branch__restaurant", "car", "payment", "customer")
+        .prefetch_related("items")
+    )
+    if extra_filter:
+        qs = qs.filter(**extra_filter)
+    return qs.filter(id=order_id).first()
 
-class CustomerCarListCreateView(APIView):
+
+def _paginate(request, qs, serializer_class):
+    try:
+        page      = max(1, int(request.query_params.get("page", 1)))
+        page_size = min(100, max(1, int(request.query_params.get("page_size", 20))))
+    except (ValueError, TypeError):
+        page, page_size = 1, 20
+
+    total = qs.count()
+    start = (page - 1) * page_size
+    data  = serializer_class(qs[start:start + page_size], many=True).data
+
+    return APIResponse.success(
+        data=data,
+        meta={
+            "total":     total,
+            "page":      page,
+            "page_size": page_size,
+            "pages":     max(1, -(-total // page_size)),
+        },
+    )
+
+
+# ═════════════════════════════════════════════
+#  CAR VIEWS
+# ═════════════════════════════════════════════
+
+class CarListCreateView(APIView):
     """
-    GET  /cart/cars/       — list my cars
-    POST /cart/cars/       — add a new car
+    GET  /checkout/cars/   — list my saved cars
+    POST /checkout/cars/   — save a new car
     """
     permission_classes = [IsAuthenticated, IsCustomer]
 
     def get(self, request):
-        cars = CustomerCar.objects.filter(customer=request.user).order_by("-created_at")
+        cars = Car.objects.filter(customer=request.user).order_by("-created_at")
         return APIResponse.success(
-            data=CustomerCarSerializer(cars, many=True).data,
+            data=CarSerializer(cars, many=True).data,
             meta={"count": cars.count()},
         )
 
     def post(self, request):
-        s = CustomerCarSerializer(data=request.data)
+        s = CarSerializer(data=request.data)
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         car = s.save(customer=request.user)
         return APIResponse.success(
-            message="Car added.",
-            data=CustomerCarSerializer(car).data,
+            message="Car saved.",
+            data=CarSerializer(car).data,
             status_code=201,
         )
 
 
-class CustomerCarDetailView(APIView):
+class CarDetailView(APIView):
     """
-    PATCH  /cart/cars/{id}/  — update car
-    DELETE /cart/cars/{id}/  — remove car
+    PATCH  /checkout/cars/{id}/
+    DELETE /checkout/cars/{id}/
     """
     permission_classes = [IsAuthenticated, IsCustomer]
 
-    def _get_car(self, request, pk):
-        try:
-            return CustomerCar.objects.get(id=pk, customer=request.user)
-        except CustomerCar.DoesNotExist:
-            return None
+    def _get(self, request, pk):
+        return Car.objects.filter(id=pk, customer=request.user).first()
 
     def patch(self, request, pk):
-        car = self._get_car(request, pk)
+        car = self._get(request, pk)
         if not car:
             return APIResponse.error(message="Car not found.", status_code=404)
-        s = CustomerCarSerializer(car, data=request.data, partial=True)
+        s = CarSerializer(car, data=request.data, partial=True)
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         s.save()
         return APIResponse.success(message="Car updated.", data=s.data)
 
     def delete(self, request, pk):
-        car = self._get_car(request, pk)
+        car = self._get(request, pk)
         if not car:
             return APIResponse.error(message="Car not found.", status_code=404)
         car.delete()
         return APIResponse.success(message="Car removed.")
 
 
-# --- CART VIEWS ------------------------------------------------------------------
-
-class RestaurantListView(APIView):
-    """GET /cart/restaurants/"""
-    permission_classes = [IsAuthenticated, IsCustomer]
-
-    def get(self, request):
-        restaurants = (
-            Restaurant.objects.filter(is_active=True)
-            .select_related("category")
-            .order_by("brand_name")
-        )
-        data = [
-            {
-                "id": str(r.id),
-                "brand_name": r.brand_name,
-                "category": r.category.name if r.category else None,
-                "city": r.city,
-                "short_address": r.short_address,
-            }
-            for r in restaurants
-        ]
-        return APIResponse.success(data=data, meta={"count": len(data)})
-
-
-class BranchListView(APIView):
-    """GET /cart/restaurants/{restaurant_id}/branches/"""
-    permission_classes = [IsAuthenticated, IsCustomer]
-
-    def get(self, request, restaurant_id):
-        try:
-            restaurant = Restaurant.objects.get(id=restaurant_id, is_active=True)
-        except Restaurant.DoesNotExist:
-            return APIResponse.error(message="Restaurant not found.", status_code=404)
-
-        branches = Branch.objects.filter(restaurant=restaurant, is_active=True)
-        data = [
-            {
-                "id": str(b.id),
-                "name": b.name,
-                "city": b.city,
-                "full_address": b.full_address,
-                "min_order": str(b.min_order),
-                "phone": b.phone,
-            }
-            for b in branches
-        ]
-        return APIResponse.success(data=data, meta={"count": len(data)})
-
-
-class BranchMenuView(APIView):
-    """GET /cart/branches/{branch_id}/menu/"""
-    permission_classes = [IsAuthenticated, IsCustomer]
-
-    def get(self, request, branch_id):
-        try:
-            branch = Branch.objects.get(id=branch_id, is_active=True)
-        except Branch.DoesNotExist:
-            return APIResponse.error(message="Branch not found.", status_code=404)
-
-        items = (
-            MenuItem.objects
-            .filter(branch=branch, is_available=True)
-            .select_related("category")
-            .prefetch_related("modifier_groups__options")
-            .order_by("category__sort_order", "sort_order", "name")
-        )
-
-        categories = {}
-        for item in items:
-            cat_id   = str(item.category.id) if item.category else "uncategorized"
-            cat_name = item.category.name if item.category else "Uncategorized"
-            if cat_id not in categories:
-                categories[cat_id] = {"category_id": cat_id, "category_name": cat_name, "items": []}
-
-            groups = []
-            for group in item.modifier_groups.all():
-                groups.append({
-                    "id": str(group.id),
-                    "name": group.name,
-                    "type": group.type,
-                    "min_select": group.min_select,
-                    "max_select": group.max_select,
-                    "options": [
-                        {
-                            "id": str(opt.id),
-                            "name": opt.name,
-                            "price": str(opt.price),
-                            "option_type": opt.option_type,
-                        }
-                        for opt in group.options.all()
-                    ],
-                })
-            categories[cat_id]["items"].append({
-                "id": str(item.id),
-                "name": item.name,
-                "price": str(item.price),
-                "description": item.description,
-                "calories": item.calories,
-                "dietary_info": item.dietary_info,
-                "modifier_groups": groups,
-            })
-
-        return APIResponse.success(
-            data=list(categories.values()),
-            meta={"branch_name": branch.name, "count": len(categories)},
-        )
-
+# ═════════════════════════════════════════════
+#  CART VIEWS
+# ═════════════════════════════════════════════
 
 class CartView(APIView):
     """
-    GET /cart/
-    POST /cart/
-    DELETE /cart/
+    GET    /checkout/cart/          — view all active carts
+    POST   /checkout/cart/          — add item to cart
+    DELETE /checkout/cart/          — clear entire cart for a branch
     """
     permission_classes = [IsAuthenticated, IsCustomer]
 
@@ -295,50 +263,50 @@ class CartView(APIView):
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         d = s.validated_data
 
-        try:
-            branch = Branch.objects.select_related("restaurant").get(id=d["branch_id"], is_active=True)
-        except Branch.DoesNotExist:
+        # Validate branch
+        branch = Branch.objects.filter(id=d["branch_id"], is_active=True).select_related("restaurant").first()
+        if not branch:
             return APIResponse.error(message="Branch not found.", status_code=404)
 
-        try:
-            item = MenuItem.objects.get(id=d["menu_item_id"], branch=branch, is_available=True)
-        except MenuItem.DoesNotExist:
+        # Validate item
+        item = MenuItem.objects.filter(id=d["menu_item_id"], branch=branch, is_available=True).first()
+        if not item:
             return APIResponse.error(message="Menu item not found or unavailable.", status_code=404)
 
+        # Validate options
         try:
-            options_price, validated_option_ids = _calculate_options_price(
+            options_price, validated_ids = _validate_options(
                 [str(x) for x in d["selected_options"]], item
             )
-        except ValueError as e:
-            return APIResponse.error(errors={"selected_options": [str(e)]}, message=str(e))
+        except ValueError as exc:
+            return APIResponse.error(errors={"selected_options": [str(exc)]}, message=str(exc))
 
-        existing_other = Cart.objects.filter(customer=request.user).exclude(branch=branch).first()
-        if existing_other:
+        # Prevent multi-branch carts
+        other_cart = Cart.objects.filter(customer=request.user).exclude(branch=branch).first()
+        if other_cart:
             return APIResponse.error(
-                message=f"You already have an active cart at '{existing_other.branch.name}'. Please clear it first.",
+                message=f"You already have a cart at '{other_cart.branch.name}'. Clear it first.",
                 status_code=400,
             )
 
         cart, _ = Cart.objects.get_or_create(customer=request.user, branch=branch)
 
-        existing_item = None
-        for ci in cart.items.all():
-            if (
-                str(ci.menu_item_id) == str(item.id)
-                and sorted(ci.selected_options) == sorted(validated_option_ids)
-            ):
-                existing_item = ci
-                break
-
-        if existing_item:
-            existing_item.quantity += d["quantity"]
-            existing_item.save(update_fields=["quantity", "updated_at"])
+        # Merge if same item + same options
+        existing = next(
+            (ci for ci in cart.items.all()
+             if str(ci.menu_item_id) == str(item.id)
+             and sorted(ci.selected_options) == sorted(validated_ids)),
+            None,
+        )
+        if existing:
+            existing.quantity += d["quantity"]
+            existing.save(update_fields=["quantity", "updated_at"])
         else:
             CartItem.objects.create(
                 cart=cart,
                 menu_item=item,
                 quantity=d["quantity"],
-                selected_options=validated_option_ids,
+                selected_options=validated_ids,
                 item_price=item.price,
                 options_price=options_price,
             )
@@ -354,31 +322,32 @@ class CartView(APIView):
         s = ClearCartSerializer(data=request.data)
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
-        try:
-            cart = Cart.objects.get(customer=request.user, branch_id=s.validated_data["branch_id"])
-            cart.delete()
-        except Cart.DoesNotExist:
-            return APIResponse.error(message="No active cart found for this branch.", status_code=404)
+        cart = Cart.objects.filter(
+            customer=request.user, branch_id=s.validated_data["branch_id"]
+        ).first()
+        if not cart:
+            return APIResponse.error(message="No active cart for this branch.", status_code=404)
+        cart.delete()
         return APIResponse.success(message="Cart cleared.")
 
 
 class CartItemView(APIView):
     """
-    PATCH  /cart/items/{cart_item_id}/
-    DELETE /cart/items/{cart_item_id}/
+    PATCH  /checkout/cart/items/{id}/   — change quantity
+    DELETE /checkout/cart/items/{id}/   — remove item
     """
     permission_classes = [IsAuthenticated, IsCustomer]
 
-    def _get_cart_item(self, request, cart_item_id):
-        try:
-            return CartItem.objects.select_related(
-                "cart", "cart__branch", "cart__branch__restaurant", "menu_item"
-            ).get(id=cart_item_id, cart__customer=request.user)
-        except CartItem.DoesNotExist:
-            return None
+    def _get_item(self, request, pk):
+        return (
+            CartItem.objects
+            .select_related("cart", "cart__branch", "cart__branch__restaurant", "menu_item")
+            .filter(id=pk, cart__customer=request.user)
+            .first()
+        )
 
-    def patch(self, request, cart_item_id):
-        ci = self._get_cart_item(request, cart_item_id)
+    def patch(self, request, pk):
+        ci = self._get_item(request, pk)
         if not ci:
             return APIResponse.error(message="Cart item not found.", status_code=404)
         s = UpdateCartItemSerializer(data=request.data)
@@ -388,8 +357,8 @@ class CartItemView(APIView):
         ci.save(update_fields=["quantity", "updated_at"])
         return APIResponse.success(message="Cart item updated.", data=CartSerializer(ci.cart).data)
 
-    def delete(self, request, cart_item_id):
-        ci = self._get_cart_item(request, cart_item_id)
+    def delete(self, request, pk):
+        ci = self._get_item(request, pk)
         if not ci:
             return APIResponse.error(message="Cart item not found.", status_code=404)
         cart = ci.cart
@@ -400,74 +369,211 @@ class CartItemView(APIView):
         return APIResponse.success(message="Item removed from cart.", data=CartSerializer(cart).data)
 
 
-# --- ORDER VIEWS — CUSTOMER -----------------------------------------------------------------------
+# ═════════════════════════════════════════════
+#  CHECKOUT — STEP 1: INITIATE
+# ═════════════════════════════════════════════
 
-class PlaceOrderView(APIView):
+class CheckoutInitView(APIView):
     """
-    POST /orders/place/
-    Creates order from active cart for a branch.
+    POST /checkout/initiate/
+
+    For Stripe:  creates a PaymentIntent server-side, returns client_secret + intent_id.
+    For Cash:    returns order summary only (no intent created).
+
+    Does NOT create the Order — that happens in Step 2 (ConfirmOrderView).
+    """
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def post(self, request):
+        s = CheckoutInitSerializer(data=request.data)
+        if not s.is_valid():
+            return APIResponse.error(errors=s.errors, message="Invalid input.")
+        d = s.validated_data
+
+        branch = Branch.objects.filter(id=d["branch_id"], is_active=True).select_related("restaurant").first()
+        if not branch:
+            return APIResponse.error(message="Branch not found.", status_code=404)
+
+        cart = (
+            Cart.objects
+            .filter(customer=request.user, branch=branch)
+            .prefetch_related("items__menu_item")
+            .first()
+        )
+        if not cart or not cart.items.exists():
+            return APIResponse.error(message="Your cart is empty.", status_code=400)
+
+        subtotal    = cart.total
+        vat         = (subtotal + SERVICE_FEE) * VAT_RATE
+        total       = (subtotal + SERVICE_FEE + vat).quantize(Decimal("0.01"))
+
+        summary = {
+            "branch_name":     branch.name,
+            "restaurant_name": branch.restaurant.brand_name,
+            "items":           [
+                {
+                    "name":     ci.menu_item.name,
+                    "quantity": ci.quantity,
+                    "subtotal": str(ci.subtotal),
+                }
+                for ci in cart.items.all()
+            ],
+            "subtotal":    str(subtotal),
+            "service_fee": str(SERVICE_FEE),
+            "vat":         str(vat.quantize(Decimal("0.01"))),
+            "total":       str(total),
+        }
+
+        if d["payment_method"] == Payment.Method.STRIPE:
+            try:
+                import stripe
+                from django.conf import settings
+                stripe.api_key = settings.STRIPE_SECRET_KEY
+
+                intent = stripe.PaymentIntent.create(
+                    amount=int(total * 100),   # Stripe uses smallest currency unit (halalas)
+                    currency="sar",
+                    metadata={
+                        "customer_id": str(request.user.id),
+                        "branch_id":   str(branch.id),
+                    },
+                )
+                return APIResponse.success(
+                    message="Payment intent created. Complete payment on the client.",
+                    data={
+                        "payment_method":  "stripe",
+                        "stripe_intent_id": intent["id"],
+                        "client_secret":   intent["client_secret"],
+                        "summary":         summary,
+                    },
+                )
+            except Exception as exc:
+                return APIResponse.error(
+                    message="Failed to create payment intent.",
+                    errors={"stripe": [str(exc)]},
+                    status_code=502,
+                )
+
+        # Cash flow — no intent needed
+        return APIResponse.success(
+            message="Review your order and confirm.",
+            data={"payment_method": "cash", "summary": summary},
+        )
+
+
+# ═════════════════════════════════════════════
+#  CHECKOUT — STEP 2: CONFIRM ORDER
+# ═════════════════════════════════════════════
+
+class ConfirmOrderView(APIView):
+    """
+    POST /checkout/confirm/
+
+    Verifies payment (Stripe) or sets cash-pending,
+    creates the Order + OrderItems, clears the cart.
     """
     permission_classes = [IsAuthenticated, IsCustomer]
 
     @transaction.atomic
     def post(self, request):
-        s = PlaceOrderSerializer(data=request.data)
+        s = ConfirmOrderSerializer(data=request.data)
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         d = s.validated_data
 
-        # Validate branch
-        try:
-            branch = Branch.objects.select_related("restaurant").get(id=d["branch_id"], is_active=True)
-        except Branch.DoesNotExist:
+        # ── Branch ──────────────────────────────────────────────────────────
+        branch = Branch.objects.filter(id=d["branch_id"], is_active=True).select_related("restaurant").first()
+        if not branch:
             return APIResponse.error(message="Branch not found.", status_code=404)
 
-        # Validate car belongs to customer
-        try:
-            car = CustomerCar.objects.get(id=d["car_id"], customer=request.user)
-        except CustomerCar.DoesNotExist:
-            return APIResponse.error(message="Car not found.", status_code=404)
+        # ── Cart ────────────────────────────────────────────────────────────
+        cart = (
+            Cart.objects
+            .filter(customer=request.user, branch=branch)
+            .prefetch_related("items__menu_item")
+            .first()
+        )
+        if not cart or not cart.items.exists():
+            return APIResponse.error(message="Your cart is empty.", status_code=400)
 
-        # Get cart
-        try:
-            cart = Cart.objects.prefetch_related("items__menu_item").get(
-                customer=request.user, branch=branch
-            )
-        except Cart.DoesNotExist:
-            return APIResponse.error(message="No active cart for this branch.", status_code=404)
-
-        if not cart.items.exists():
-            return APIResponse.error(message="Cart is empty.", status_code=400)
-
-        # Check min order
-        cart_total = cart.total
-        if cart_total < branch.min_order:
+        subtotal    = cart.total
+        if subtotal < branch.min_order:
             return APIResponse.error(
-                message=f"Minimum order is {branch.min_order} SAR. Your cart total is {cart_total} SAR.",
+                message=f"Minimum order is {branch.min_order} SAR. Your cart is {subtotal} SAR.",
                 status_code=400,
             )
 
-        # Build snapshot
-        items_data, subtotal = _build_order_snapshot(cart)
         vat   = (subtotal + SERVICE_FEE) * VAT_RATE
-        total = subtotal + SERVICE_FEE + vat
+        total = (subtotal + SERVICE_FEE + vat).quantize(Decimal("0.01"))
 
-        # Create order
+        # ── Car ─────────────────────────────────────────────────────────────
+        car = None
+        if d.get("car_id"):
+            car = Car.objects.filter(id=d["car_id"], customer=request.user).first()
+            if not car:
+                return APIResponse.error(message="Car not found.", status_code=404)
+        else:
+            # Create car inline and save it for future use
+            car = Car.objects.create(
+                customer=request.user,
+                car_model=d["car_model"],
+                plate_number=d["plate_number"],
+                color=d["car_color"].upper(),
+            )
+
+        # ── Payment ─────────────────────────────────────────────────────────
+        method = d["payment_method"]
+
+        if method == Payment.Method.STRIPE:
+            try:
+                import stripe
+                from django.conf import settings
+                stripe.api_key = settings.STRIPE_SECRET_KEY
+
+                intent = stripe.PaymentIntent.retrieve(d["stripe_intent_id"])
+                if intent["status"] != "succeeded":
+                    return APIResponse.error(
+                        message="Payment not confirmed. Please complete the payment first.",
+                        errors={"stripe": [f"Intent status: {intent['status']}"]},
+                        status_code=402,
+                    )
+                payment = Payment.objects.create(
+                    method=Payment.Method.STRIPE,
+                    status=Payment.Status.PAID,
+                    amount=total,
+                    stripe_intent_id=d["stripe_intent_id"],
+                )
+            except Exception as exc:
+                return APIResponse.error(
+                    message="Stripe verification failed.",
+                    errors={"stripe": [str(exc)]},
+                    status_code=502,
+                )
+        else:
+            # Cash — payment is pending until employee receives it
+            payment = Payment.objects.create(
+                method=Payment.Method.CASH,
+                status=Payment.Status.PENDING,
+                amount=total,
+            )
+
+        # ── Order ────────────────────────────────────────────────────────────
         order = Order.objects.create(
             customer=request.user,
             branch=branch,
             car=car,
-            note=d["note"],
+            payment=payment,
+            note=d.get("note", ""),
             pickup_time=d["pickup_time"],
-            payment_method=d["payment_method"],
             subtotal=subtotal,
             service_fee=SERVICE_FEE,
             vat=vat.quantize(Decimal("0.01")),
-            total=total.quantize(Decimal("0.01")),
+            total=total,
             qr_token=secrets.token_hex(32),
         )
 
-        # Create order items snapshot
+        # ── Order Items (snapshot) ───────────────────────────────────────────
+        items_data, _ = _build_order_snapshot(cart)
         for item_data in items_data:
             OrderItem.objects.create(
                 order=order,
@@ -479,7 +585,7 @@ class PlaceOrderView(APIView):
                 selected_options=item_data["selected_options"],
             )
 
-        # Clear cart
+        # ── Clear Cart ───────────────────────────────────────────────────────
         cart.delete()
 
         return APIResponse.success(
@@ -489,192 +595,19 @@ class PlaceOrderView(APIView):
         )
 
 
-class CustomerOrderListView(APIView):
+# ═════════════════════════════════════════════
+#  ORDER — LIST  (role-scoped)
+# ═════════════════════════════════════════════
+
+class OrderListView(APIView):
     """
-    GET /orders/  — customer's own order history
-    """
-    permission_classes = [IsAuthenticated, IsCustomer]
+    GET /checkout/orders/
 
-    def get(self, request):
-        orders = (
-            Order.objects
-            .filter(customer=request.user)
-            .select_related("branch", "branch__restaurant", "car")
-            .prefetch_related("items")
-            .order_by("-created_at")
-        )
-        return APIResponse.success(
-            data=OrderListSerializer(orders, many=True).data,
-            meta={"count": orders.count()},
-        )
+    customer  → own orders only
+    employee  → branch orders
+    owner     → all branches of their restaurant
+    admin     → all orders
 
-
-class CustomerOrderDetailView(APIView):
-    """
-    GET /orders/{order_id}/  — full order detail for customer
-    """
-    permission_classes = [IsAuthenticated, IsCustomer]
-
-    def get(self, request, order_id):
-        try:
-            order = (
-                Order.objects
-                .select_related("branch", "branch__restaurant", "car")
-                .prefetch_related("items")
-                .get(id=order_id, customer=request.user)
-            )
-        except Order.DoesNotExist:
-            return APIResponse.error(message="Order not found.", status_code=404)
-        return APIResponse.success(data=OrderSerializer(order).data)
-
-
-class CustomerOrderCancelView(APIView):
-    """
-    POST /orders/{order_id}/cancel/
-    Customer can cancel only if order is still pending.
-    """
-    permission_classes = [IsAuthenticated, IsCustomer]
-
-    @transaction.atomic
-    def post(self, request, order_id):
-        try:
-            order = Order.objects.get(id=order_id, customer=request.user)
-        except Order.DoesNotExist:
-            return APIResponse.error(message="Order not found.", status_code=404)
-
-        if order.status != Order.Status.PENDING:
-            return APIResponse.error(
-                message="Order can only be cancelled while it is pending.",
-                status_code=400,
-            )
-
-        order.status = Order.Status.CANCELLED
-        order.cancelled_at = timezone.now()
-        order.save(update_fields=["status", "cancelled_at", "updated_at"])
-
-        return APIResponse.success(message="Order cancelled.")
-
-
-class CustomerPeepView(APIView):
-    """
-    POST /orders/{order_id}/peep/
-    Customer honks — notifies employee that customer has arrived.
-    """
-    permission_classes = [IsAuthenticated, IsCustomer]
-
-    def post(self, request, order_id):
-        try:
-            order = Order.objects.select_related("branch").get(
-                id=order_id,
-                customer=request.user,
-                status__in=[Order.Status.ACCEPTED, Order.Status.PREPARING, Order.Status.READY],
-            )
-        except Order.DoesNotExist:
-            return APIResponse.error(message="Order not found or not active.", status_code=404)
-
-        # TODO: trigger WebSocket notification to branch employees
-        # channel_layer.group_send(f"branch_{order.branch_id}", {...})
-
-        return APIResponse.success(
-            message="Peep sent! The restaurant has been notified you have arrived.",
-            data={"order_number": order.order_number},
-        )
-
-
-class CustomerConfirmDeliveryView(APIView):
-    """
-    POST /orders/{order_id}/confirm-delivery/
-    Customer confirms they received the order (alternative to QR scan).
-    """
-    permission_classes = [IsAuthenticated, IsCustomer]
-
-    @transaction.atomic
-    def post(self, request, order_id):
-        try:
-            order = Order.objects.get(
-                id=order_id,
-                customer=request.user,
-                status=Order.Status.READY,
-            )
-        except Order.DoesNotExist:
-            return APIResponse.error(message="Order not found or not ready.", status_code=404)
-
-        order.status       = Order.Status.DELIVERED
-        order.delivered_at = timezone.now()
-        order.save(update_fields=["status", "delivered_at", "updated_at"])
-
-        # TODO: trigger WebSocket notification to branch employees
-        return APIResponse.success(
-            message="Order marked as delivered. Enjoy your meal!",
-            data=OrderSerializer(order).data,
-        )
-
-
-class CustomerOrderQRView(APIView):
-    """
-    GET /orders/{order_id}/qr/
-    Returns the QR token for the customer to display for scanning.
-    """
-    permission_classes = [IsAuthenticated, IsCustomer]
-
-    def get(self, request, order_id):
-        try:
-            order = Order.objects.get(
-                id=order_id,
-                customer=request.user,
-                status=Order.Status.READY,
-            )
-        except Order.DoesNotExist:
-            return APIResponse.error(message="Order not found or not ready.", status_code=404)
-
-        return APIResponse.success(
-            data={
-                "order_number": order.order_number,
-                "qr_token": order.qr_token,
-            }
-        )
-
-
-class CustomerOrderRatingView(APIView):
-    """
-    POST /orders/{order_id}/rate/
-    Customer rates and gives feedback after delivery.
-    """
-    permission_classes = [IsAuthenticated, IsCustomer]
-
-    def post(self, request, order_id):
-        try:
-            order = Order.objects.get(
-                id=order_id,
-                customer=request.user,
-                status=Order.Status.DELIVERED,
-            )
-        except Order.DoesNotExist:
-            return APIResponse.error(message="Order not found or not delivered yet.", status_code=404)
-
-        if hasattr(order, "rating"):
-            return APIResponse.error(message="You have already rated this order.", status_code=400)
-
-        s = OrderRatingSerializer(data=request.data)
-        if not s.is_valid():
-            return APIResponse.error(errors=s.errors, message="Invalid input.")
-
-        rating = s.save(order=order, customer=request.user)
-        return APIResponse.success(
-            message="Thank you for your feedback!",
-            data=OrderRatingSerializer(rating).data,
-            status_code=201,
-        )
-
-
-# --- ORDER VIEWS — EMPLOYEE / OWNER / ADMIN -----------------------------------------------------------------------    
-
-class StaffOrderListView(APIView):
-    """
-    GET /staff/orders/
-    Employee → branch orders only
-    Owner → all branch orders of their restaurant
-    Admin → all orders
     Query params: status, page, page_size
     """
     permission_classes = [IsAuthenticated]
@@ -683,7 +616,10 @@ class StaffOrderListView(APIView):
         user   = request.user
         status = request.query_params.get("status", "")
 
-        if user.role == "employee":
+        if user.role == "customer":
+            qs = Order.objects.filter(customer=user)
+
+        elif user.role == "employee":
             emp = getattr(user, "employee_profile", None)
             if not emp:
                 return APIResponse.error(message="Employee profile not found.", status_code=404)
@@ -702,254 +638,470 @@ class StaffOrderListView(APIView):
             qs = qs.filter(status=status)
 
         qs = (
-            qs.select_related("branch", "branch__restaurant", "car", "customer")
+            qs.select_related("branch", "branch__restaurant", "car", "payment", "customer")
             .prefetch_related("items")
             .order_by("-created_at")
         )
-
-        # Pagination
-        try:
-            page = max(1, int(request.query_params.get("page", 1)))
-            page_size = min(100, max(1, int(request.query_params.get("page_size", 20))))
-        except (ValueError, TypeError):
-            page, page_size = 1, 20
-
-        total = qs.count()
-        start = (page - 1) * page_size
-        data  = OrderListSerializer(qs[start:start + page_size], many=True).data
-
-        return APIResponse.success(
-            data=data,
-            meta={
-                "total": total,
-                "page": page,
-                "page_size": page_size,
-                "pages": max(1, -(-total // page_size)),
-            },
-        )
+        return _paginate(request, qs, OrderListSerializer)
 
 
-class StaffOrderDetailView(APIView):
+# ═════════════════════════════════════════════
+#  ORDER — DETAIL
+# ═════════════════════════════════════════════
+
+class OrderDetailView(APIView):
     """
-    GET /staff/orders/{order_id}/
+    GET /checkout/orders/{order_id}/
+
+    Customer sees own order.
+    Employee / owner / admin see via staff endpoint.
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, order_id):
-        try:
-            order = (
-                Order.objects
-                .select_related("branch", "branch__restaurant", "car", "customer")
-                .prefetch_related("items")
-                .get(id=order_id)
-            )
-        except Order.DoesNotExist:
-            return APIResponse.error(message="Order not found.", status_code=404)
+        user = request.user
 
-        if not _can_manage_order(request.user, order):
-            return APIResponse.error(message="Unauthorized.", status_code=403)
+        if user.role == "customer":
+            order = _order_or_404(order_id, extra_filter={"customer": user})
+        else:
+            order = _order_or_404(order_id)
+            if order and not _can_manage(user, order):
+                return APIResponse.error(message="Unauthorized.", status_code=403)
+
+        if not order:
+            return APIResponse.error(message="Order not found.", status_code=404)
 
         return APIResponse.success(data=OrderSerializer(order).data)
 
 
-class StaffOrderAcceptView(APIView):
+# ═════════════════════════════════════════════
+#  EMPLOYEE — RECEIVE CASH
+# ═════════════════════════════════════════════
+
+class ReceiveCashView(APIView):
     """
-    POST /staff/orders/{order_id}/accept/
-    Body: { "prep_time": 22 }   ← estimated minutes
-    Employee accepts order → status: preparing
+    POST /checkout/orders/{order_id}/receive-cash/
+
+    Employee confirms cash was received.
+    Payment status → PAID.
+    Must happen BEFORE accepting the order.
     """
     permission_classes = [IsAuthenticated]
 
     @transaction.atomic
     def post(self, request, order_id):
-        try:
-            order = Order.objects.get(id=order_id, status=Order.Status.PENDING)
-        except Order.DoesNotExist:
-            return APIResponse.error(message="Order not found or already processed.", status_code=404)
-
-        if not _can_manage_order(request.user, order):
+        order = _order_or_404(order_id)
+        if not order:
+            return APIResponse.error(message="Order not found.", status_code=404)
+        if not _can_manage(request.user, order):
             return APIResponse.error(message="Unauthorized.", status_code=403)
 
-        s = OrderStatusUpdateSerializer(data=request.data)
+        payment = order.payment
+        if not payment or payment.method != Payment.Method.CASH:
+            return APIResponse.error(message="This order is not a cash order.", status_code=400)
+        if payment.status == Payment.Status.PAID:
+            return APIResponse.error(message="Cash already marked as received.", status_code=400)
+
+        s = CashReceiveSerializer(data=request.data)
+        if not s.is_valid():
+            return APIResponse.error(errors=s.errors, message="Invalid input.")
+
+        payment.status           = Payment.Status.PAID
+        payment.cash_received_by = request.user
+        payment.cash_received_at = timezone.now()
+        payment.save(update_fields=["status", "cash_received_by", "cash_received_at", "updated_at"])
+
+        return APIResponse.success(
+            message=f"Cash of {s.validated_data['amount_received']} SAR received.",
+            data=OrderSerializer(order).data,
+        )
+
+
+# ═════════════════════════════════════════════
+#  EMPLOYEE — ACCEPT ORDER
+# ═════════════════════════════════════════════
+
+class AcceptOrderView(APIView):
+    """
+    POST /checkout/orders/{order_id}/accept/
+
+    Rules:
+    - Stripe orders: payment must be PAID
+    - Cash orders:   payment must be PAID (employee clicked "Receive Cash" first)
+    - Order status must be ORDER_SENT
+
+    Transitions order to PREPARING.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, order_id):
+        order = _order_or_404(order_id)
+        if not order:
+            return APIResponse.error(message="Order not found.", status_code=404)
+        if not _can_manage(request.user, order):
+            return APIResponse.error(message="Unauthorized.", status_code=403)
+        if order.status != Order.Status.ORDER_SENT:
+            return APIResponse.error(message="Only ORDER_SENT orders can be accepted.", status_code=400)
+
+        payment = order.payment
+        if not payment or payment.status != Payment.Status.PAID:
+            return APIResponse.error(
+                message="Payment not confirmed. For cash orders, click 'Receive Cash' first.",
+                status_code=400,
+            )
+
+        s = AcceptOrderSerializer(data=request.data)
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
 
         now = timezone.now()
-        order.status = Order.Status.PREPARING
-        order.accepted_at  = now
+        order.status       = Order.Status.PREPARING
         order.preparing_at = now
-        order.save(update_fields=["status", "accepted_at", "preparing_at", "updated_at"])
+        # Optionally store prep_time in pickup_time if provided
+        if s.validated_data.get("prep_time"):
+            order.pickup_time = f"{s.validated_data['prep_time']} minutes"
+        order.save(update_fields=["status", "preparing_at", "pickup_time", "updated_at"])
 
-        # TODO: WebSocket push to customer
         return APIResponse.success(
             message="Order accepted. Preparation started.",
             data=OrderSerializer(order).data,
         )
 
 
-class StaffOrderModifyView(APIView):
+# ═════════════════════════════════════════════
+#  EMPLOYEE — UPDATE STATUS  (PREPARING → READY)
+# ═════════════════════════════════════════════
+
+class UpdateOrderStatusView(APIView):
     """
-    POST /staff/orders/{order_id}/modify/
-    Body: { "reason": "No onions, extra cheese" }
-    Employee sends modification note to customer.
-    Status stays pending.
-    """
-    permission_classes = [IsAuthenticated]
+    POST /checkout/orders/{order_id}/update-status/
 
-    def post(self, request, order_id):
-        try:
-            order = Order.objects.get(id=order_id, status=Order.Status.PENDING)
-        except Order.DoesNotExist:
-            return APIResponse.error(message="Order not found or not pending.", status_code=404)
-
-        if not _can_manage_order(request.user, order):
-            return APIResponse.error(message="Unauthorized.", status_code=403)
-
-        reason = request.data.get("reason", "").strip()
-        if not reason:
-            return APIResponse.error(errors={"reason": ["Modification reason is required."]})
-
-        # Store modification note in order note field
-        order.note = f"[Staff modification]: {reason}"
-        order.save(update_fields=["note", "updated_at"])
-
-        # TODO: WebSocket push to customer
-        return APIResponse.success(
-            message="Modification note sent to customer.",
-            data={"order_number": order.order_number, "note": order.note},
-        )
-
-
-class StaffOrderCancelView(APIView):
-    """
-    POST /staff/orders/{order_id}/cancel/
-    Body: { "reason": "Stock out of ingredients" }
+    Allowed transition: PREPARING → READY
     """
     permission_classes = [IsAuthenticated]
 
     @transaction.atomic
     def post(self, request, order_id):
-        try:
-            order = Order.objects.get(
-                id=order_id,
-                status__in=[Order.Status.PENDING, Order.Status.PREPARING],
+        order = _order_or_404(order_id)
+        if not order:
+            return APIResponse.error(message="Order not found.", status_code=404)
+        if not _can_manage(request.user, order):
+            return APIResponse.error(message="Unauthorized.", status_code=403)
+
+        transitions = {
+            Order.Status.PREPARING: Order.Status.READY,
+        }
+        next_status = transitions.get(order.status)
+        if not next_status:
+            return APIResponse.error(
+                message=f"Cannot advance from '{order.status}'. "
+                        f"Only PREPARING → READY is allowed via this endpoint.",
+                status_code=400,
             )
-        except Order.DoesNotExist:
-            return APIResponse.error(message="Order not found or cannot be cancelled.", status_code=404)
 
-        if not _can_manage_order(request.user, order):
-            return APIResponse.error(message="Unauthorized.", status_code=403)
-
-        reason = request.data.get("reason", "").strip()
-        order.status = Order.Status.CANCELLED
-        order.cancelled_at = timezone.now()
-        order.note = f"[Cancelled by staff]: {reason}" if reason else order.note
-        order.save(update_fields=["status", "cancelled_at", "note", "updated_at"])
-
-        # TODO: WebSocket push to customer
-        return APIResponse.success(message="Order cancelled.")
-
-
-class StaffOrderReadyView(APIView):
-    """
-    POST /staff/orders/{order_id}/ready/
-    Employee marks order as ready for pickup.
-    """
-    permission_classes = [IsAuthenticated]
-
-    @transaction.atomic
-    def post(self, request, order_id):
-        try:
-            order = Order.objects.get(id=order_id, status=Order.Status.PREPARING)
-        except Order.DoesNotExist:
-            return APIResponse.error(message="Order not found or not in preparing state.", status_code=404)
-
-        if not _can_manage_order(request.user, order):
-            return APIResponse.error(message="Unauthorized.", status_code=403)
-
-        order.status   = Order.Status.READY
-        order.ready_at = timezone.now()
+        now = timezone.now()
+        order.status = next_status
+        if next_status == Order.Status.READY:
+            order.ready_at = now
         order.save(update_fields=["status", "ready_at", "updated_at"])
 
-        # TODO: WebSocket push to customer
         return APIResponse.success(
-            message="Order marked as ready.",
+            message=f"Order status updated to '{next_status}'.",
             data=OrderSerializer(order).data,
         )
 
 
-class StaffScanQRView(APIView):
+# ═════════════════════════════════════════════
+#  EMPLOYEE — CANCEL ORDER
+# ═════════════════════════════════════════════
+
+class CancelOrderView(APIView):
     """
-    POST /staff/orders/scan-qr/
-    Body: { "qr_token": "..." }
-    Employee scans customer QR → marks order delivered.
+    POST /checkout/orders/{order_id}/cancel/
+
+    Customer can cancel if ORDER_SENT.
+    Employee/owner/admin can cancel if ORDER_SENT or PREPARING.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, order_id):
+        user = request.user
+
+        if user.role == "customer":
+            order = _order_or_404(order_id, extra_filter={"customer": user})
+        else:
+            order = _order_or_404(order_id)
+
+        if not order:
+            return APIResponse.error(message="Order not found.", status_code=404)
+
+        if user.role == "customer":
+            if order.status != Order.Status.ORDER_SENT:
+                return APIResponse.error(
+                    message="You can only cancel a pending order (ORDER_SENT).",
+                    status_code=400,
+                )
+        else:
+            if not _can_manage(user, order):
+                return APIResponse.error(message="Unauthorized.", status_code=403)
+            if order.status not in (Order.Status.ORDER_SENT, Order.Status.PREPARING):
+                return APIResponse.error(
+                    message="Order cannot be cancelled at this stage.",
+                    status_code=400,
+                )
+
+        s = CancelOrderSerializer(data=request.data)
+        if not s.is_valid():
+            return APIResponse.error(errors=s.errors, message="Invalid input.")
+
+        reason = s.validated_data.get("reason", "")
+        order.status       = Order.Status.CANCELLED
+        order.cancelled_at = timezone.now()
+        if reason:
+            order.note = f"[Cancelled]: {reason}"
+        order.save(update_fields=["status", "cancelled_at", "note", "updated_at"])
+
+        return APIResponse.success(message="Order cancelled.")
+
+
+# ═════════════════════════════════════════════
+#  USER — MARK ARRIVED  (triggers Celery)
+# ═════════════════════════════════════════════
+
+class MarkArrivedView(APIView):
+    """
+    POST /checkout/orders/{order_id}/arrived/
+
+    Customer taps "I Arrived".
+    Dispatches Celery task to set user_arrived = True on the order.
+    Employee sees the flag in the order detail endpoint.
+    """
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def post(self, request, order_id):
+        s = MarkArrivedSerializer(data=request.data)
+        if not s.is_valid():
+            return APIResponse.error(errors=s.errors, message="Invalid input.")
+
+        order = Order.objects.filter(
+            id=order_id,
+            customer=request.user,
+            status__in=[Order.Status.ORDER_SENT, Order.Status.PREPARING, Order.Status.READY],
+        ).first()
+        if not order:
+            return APIResponse.error(message="Order not found or already completed.", status_code=404)
+
+        if order.user_arrived:
+            return APIResponse.error(message="Arrival already recorded.", status_code=400)
+
+        # Fire Celery task
+        mark_user_arrived.delay(
+            order_id=str(order_id),
+            latitude=float(s.validated_data["latitude"])  if s.validated_data.get("latitude")  else None,
+            longitude=float(s.validated_data["longitude"]) if s.validated_data.get("longitude") else None,
+        )
+
+        return APIResponse.success(message="Arrival noted. The restaurant has been informed.")
+
+
+# ═════════════════════════════════════════════
+#  EMPLOYEE — VIEW DISTANCE / ETA
+# ═════════════════════════════════════════════
+
+class OrderETAView(APIView):
+    """
+    GET /checkout/orders/{order_id}/eta/
+
+    Returns:
+      - user_arrived flag
+      - distance_km  (if coords available)
+      - eta_minutes  (mocked: distance / AVG_SPEED_KMH * 60)
+      - remaining_minutes (pickup_time parsing if it's a digit string)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, order_id):
+        order = _order_or_404(order_id)
+        if not order:
+            return APIResponse.error(message="Order not found.", status_code=404)
+        if not _can_manage(request.user, order):
+            return APIResponse.error(message="Unauthorized.", status_code=403)
+
+        branch_lat = order.branch.latitude  if order.branch else None
+        branch_lon = order.branch.longitude if order.branch else None
+        distance   = _haversine_km(order.arrived_lat, order.arrived_lon, branch_lat, branch_lon)
+        eta        = round(distance / AVG_SPEED_KMH * 60, 1) if distance is not None else None
+
+        # remaining_minutes: only if pickup_time is purely numeric (minutes)
+        remaining = None
+        if order.pickup_time:
+            parts = order.pickup_time.strip().split()
+            try:
+                remaining = int(parts[0])
+            except (ValueError, IndexError):
+                remaining = None
+
+        data = {
+            "order_id":          str(order.id),
+            "user_arrived":      order.user_arrived,
+            "distance_km":       distance,
+            "eta_minutes":       eta,
+            "remaining_minutes": remaining,
+            "arrived_lat":       order.arrived_lat,
+            "arrived_lon":       order.arrived_lon,
+        }
+        s = OrderETASerializer(data=data)
+        s.is_valid()   # always valid — computed data
+        return APIResponse.success(data=s.data)
+
+
+# ═════════════════════════════════════════════
+#  DELIVERY — QR SCAN  (employee scans)
+# ═════════════════════════════════════════════
+
+class DeliverByQRView(APIView):
+    """
+    POST /checkout/orders/deliver-qr/
+
+    Employee scans the customer's QR code.
+    Marks order DELIVERED and invalidates the token.
     """
     permission_classes = [IsAuthenticated]
 
     @transaction.atomic
     def post(self, request):
-        qr_token = request.data.get("qr_token", "").strip()
-        if not qr_token:
-            return APIResponse.error(errors={"qr_token": ["This field is required."]})
+        s = QRScanSerializer(data=request.data)
+        if not s.is_valid():
+            return APIResponse.error(errors=s.errors, message="Invalid input.")
 
-        try:
-            order = Order.objects.select_related("branch").get(
-                qr_token=qr_token,
-                status=Order.Status.READY,
-            )
-        except Order.DoesNotExist:
+        order = (
+            Order.objects
+            .select_related("branch", "branch__restaurant", "car", "payment")
+            .filter(qr_token=s.validated_data["qr_token"], status=Order.Status.READY)
+            .first()
+        )
+        if not order:
             return APIResponse.error(message="Invalid QR code or order not ready.", status_code=404)
-
-        if not _can_manage_order(request.user, order):
+        if not _can_manage(request.user, order):
             return APIResponse.error(message="Unauthorized.", status_code=403)
 
         order.status       = Order.Status.DELIVERED
         order.delivered_at = timezone.now()
-        order.qr_token     = None   # invalidate
+        order.qr_token     = None   # invalidate token
         order.save(update_fields=["status", "delivered_at", "qr_token", "updated_at"])
 
-        # TODO: WebSocket push to customer
         return APIResponse.success(
-            message="QR scanned. Order delivered successfully!",
+            message="QR scanned. Order delivered!",
             data={
                 "order_number": order.order_number,
-                "customer": str(order.customer_id),
-                "items": order.items.count(),
+                "delivered_at": str(order.delivered_at),
             },
         )
 
 
-class StaffCashConfirmView(APIView):
+# ═════════════════════════════════════════════
+#  DELIVERY — CUSTOMER SELF-CONFIRM
+# ═════════════════════════════════════════════
+
+class DeliverManualView(APIView):
     """
-    POST /staff/orders/{order_id}/confirm-cash/
-    Body: { "amount_received": 77.05 }
-    Employee confirms hand cash received → marks payment paid.
+    POST /checkout/orders/{order_id}/confirm-delivery/
+
+    Customer taps "I received my order".
+    Order must be READY.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCustomer]
 
     @transaction.atomic
     def post(self, request, order_id):
-        try:
-            order = Order.objects.get(
-                id=order_id,
-                payment_method=Order.PaymentMethod.HAND_CASH,
-                payment_status=Order.PaymentStatus.PENDING,
-            )
-        except Order.DoesNotExist:
-            return APIResponse.error(message="Order not found or payment already confirmed.", status_code=404)
+        order = Order.objects.filter(
+            id=order_id,
+            customer=request.user,
+            status=Order.Status.READY,
+        ).first()
+        if not order:
+            return APIResponse.error(message="Order not found or not ready.", status_code=404)
 
-        if not _can_manage_order(request.user, order):
-            return APIResponse.error(message="Unauthorized.", status_code=403)
+        order.status       = Order.Status.DELIVERED
+        order.delivered_at = timezone.now()
+        order.save(update_fields=["status", "delivered_at", "updated_at"])
 
-        s = CashConfirmSerializer(data=request.data)
+        return APIResponse.success(
+            message="Order confirmed as delivered. Enjoy!",
+            data=OrderSerializer(order).data,
+        )
+
+
+# ═════════════════════════════════════════════
+#  CUSTOMER — GET QR TOKEN
+# ═════════════════════════════════════════════
+
+class OrderQRView(APIView):
+    """
+    GET /checkout/orders/{order_id}/qr/
+
+    Returns the QR token for the customer to display.
+    Only available when order status is READY.
+    """
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request, order_id):
+        order = Order.objects.filter(
+            id=order_id,
+            customer=request.user,
+            status=Order.Status.READY,
+        ).first()
+        if not order:
+            return APIResponse.error(message="Order not found or not ready.", status_code=404)
+
+        return APIResponse.success(
+            data={
+                "order_number": order.order_number,
+                "qr_token":     order.qr_token,
+            }
+        )
+
+
+# ═════════════════════════════════════════════
+#  FEEDBACK
+# ═════════════════════════════════════════════
+
+class FeedbackView(APIView):
+    """
+    POST /checkout/orders/{order_id}/feedback/
+    GET  /checkout/orders/{order_id}/feedback/  — view submitted feedback
+    """
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request, order_id):
+        order = Order.objects.filter(id=order_id, customer=request.user).first()
+        if not order:
+            return APIResponse.error(message="Order not found.", status_code=404)
+        feedback = getattr(order, "feedback", None)
+        if not feedback:
+            return APIResponse.error(message="No feedback submitted yet.", status_code=404)
+        return APIResponse.success(data=FeedbackSerializer(feedback).data)
+
+    def post(self, request, order_id):
+        order = Order.objects.filter(
+            id=order_id,
+            customer=request.user,
+            status=Order.Status.DELIVERED,
+        ).first()
+        if not order:
+            return APIResponse.error(message="Order not found or not delivered yet.", status_code=404)
+        if hasattr(order, "feedback"):
+            return APIResponse.error(message="Feedback already submitted.", status_code=400)
+
+        s = FeedbackSerializer(data=request.data)
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
 
-        order.payment_status      = Order.PaymentStatus.PAID
-        order.cash_confirmed_by   = request.user
-        order.save(update_fields=["payment_status", "cash_confirmed_by", "updated_at"])
-
+        feedback = s.save(order=order, customer=request.user)
         return APIResponse.success(
-            message=f"Cash payment of {s.validated_data['amount_received']} SAR confirmed.",
-            data=OrderSerializer(order).data,
+            message="Thank you for your feedback!",
+            data=FeedbackSerializer(feedback).data,
+            status_code=201,
         )

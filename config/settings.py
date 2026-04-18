@@ -63,6 +63,8 @@ INSTALLED_APPS = [
     'corsheaders',
     'drf_spectacular',
 
+    "channels",
+
     # --- Local apps ---
     'apps.authentication',
     'apps.cities',
@@ -245,3 +247,24 @@ SPECTACULAR_SETTINGS = {
 }
 
 BASE_URL = env("BASE_URL", default="http://10.10.13.99:8070/")
+
+
+# --- ASGI application -----------------------------------------------------------------
+
+ASGI_APPLICATION = "config.asgi.application"
+
+# --- Channel layers (Redis backend) ---------------------------------------------------
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
+    }
+}
+
+# --- Celery (also uses Redis) --------------------------------------------------------- 
+
+CELERY_BROKER_URL     = "redis://127.0.0.1:6379/0"
+CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/0"
