@@ -88,6 +88,27 @@ class IsOwnerOrAdmin(BasePermission):
         )
 
 
+class IsOwnerOrReadOnly(BasePermission):
+    """
+    Allow full access to owners, read-only access to other authenticated users.
+    - Owners: full access (GET, POST, PUT, PATCH, DELETE)
+    - Other authenticated users: read-only (GET, HEAD, OPTIONS)
+    """
+    message = "Owner access required for modifications. Other users have read-only access."
+    
+    def has_permission(self, request, view):
+        # Allow read-only methods for any authenticated user
+        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            return bool(request.user and request.user.is_authenticated)
+        
+        # Allow write methods only for owners
+        return bool(
+            request.user
+            and request.user.is_authenticated
+            and request.user.role == "owner"
+        )
+
+
 # --- Custom Permissions -----------------------------------------------------------------
 
 class HasPermission(BasePermission):

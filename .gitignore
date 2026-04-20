@@ -16,6 +16,17 @@ venv/
 ENV/
 .venv/
 
+# .env
+.env
+.env/
+.env*
+*.env
+
+
+# Ignore all markdown files except README.md
+*.md
+!README.md
+
 
 # Django stuff
 *.log
@@ -53,10 +64,3 @@ pytest_cache/
 # OS generated files
 .DS_Store
 Thumbs.db
-
-
-# Environment variables
-.env
-
-
-.env

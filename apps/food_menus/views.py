@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 
 from apps.utils.custom_response import APIResponse
-from apps.authentication.permissions import IsOwner
+from apps.authentication.permissions import IsOwner, IsOwnerOrReadOnly
 from apps.authentication.services import NotFound as AuthNotFound
 
 from .models import MenuItem
@@ -47,10 +47,11 @@ class MenuByCategoryView(APIView):
     Returns all RestaurantCategories that have items in this branch,
     with full item → modifier group → option nesting.
     """
-    permission_classes = [IsAuthenticated, IsOwner]
+    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
 
     def get(self, request, branch_id):
-        branch, err = _resolve_branch(request, branch_id)
+        # Allow any authenticated user to view categories (read-only)
+        branch, err = _resolve_branch(request, branch_id, read_only=True)
         if err:
             return err
         categories = RestaurantCategoryMenuService.list_categories_with_items(branch)
@@ -60,12 +61,25 @@ class MenuByCategoryView(APIView):
         )
 
 
-def _resolve_branch(request, branch_id):
+def _resolve_branch(request, branch_id, read_only=False):
     """
     Resolves the branch and returns (branch, None) on success
     or (None, error_response) on failure.
+    
+    If read_only=True, allows any authenticated user to access active branches.
+    If read_only=False, only allows the branch owner to access.
     """
     try:
+        # For read-only access (GET requests), allow any authenticated user to view any active branch
+        if read_only:
+            from apps.restaurants.models import Branch
+            try:
+                branch = Branch.objects.get(id=branch_id, is_active=True)
+                return branch, None
+            except Branch.DoesNotExist:
+                raise MenuNotFound(f"Branch {branch_id} not found or inactive.")
+        
+        # For write access, require branch ownership
         branch = _get_branch(request.user, branch_id)
         return branch, None
     except (MenuNotFound, AuthNotFound) as e:
@@ -79,10 +93,11 @@ class MenuCategoryListCreateView(APIView):
     list of categories with item_count annotation (e.g. Burgers (7))
     create a new category
     """
-    permission_classes = [IsAuthenticated, IsOwner]
+    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
 
     def get(self, request, branch_id):
-        branch, err = _resolve_branch(request, branch_id)
+        # Allow any authenticated user to view categories (read-only)
+        branch, err = _resolve_branch(request, branch_id, read_only=True)
         if err:
             return err
         categories = MenuCategoryService.list_categories(branch)
@@ -92,7 +107,8 @@ class MenuCategoryListCreateView(APIView):
         )
 
     def post(self, request, branch_id):
-        branch, err = _resolve_branch(request, branch_id)
+        # Only owners can create categories
+        branch, err = _resolve_branch(request, branch_id, read_only=False)
         if err:
             return err
         s = MenuCategoryWriteSerializer(
@@ -117,10 +133,11 @@ class MenuCategoryDetailView(APIView):
     update name / is_active / sort_order
     delete category and all its items
     """
-    permission_classes = [IsAuthenticated, IsOwner]
+    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
 
     def get(self, request, branch_id, category_id):
-        branch, err = _resolve_branch(request, branch_id)
+        # Allow any authenticated user to view category details (read-only)
+        branch, err = _resolve_branch(request, branch_id, read_only=True)
         if err:
             return err
         try:
@@ -130,7 +147,8 @@ class MenuCategoryDetailView(APIView):
         return APIResponse.success(data=MenuCategoryDetailSerializer(category).data)
 
     def patch(self, request, branch_id, category_id):
-        branch, err = _resolve_branch(request, branch_id)
+        # Only owners can update categories
+        branch, err = _resolve_branch(request, branch_id, read_only=False)
         if err:
             return err
         try:
@@ -156,7 +174,8 @@ class MenuCategoryDetailView(APIView):
         )
 
     def delete(self, request, branch_id, category_id):
-        branch, err = _resolve_branch(request, branch_id)
+        # Only owners can delete categories
+        branch, err = _resolve_branch(request, branch_id, read_only=False)
         if err:
             return err
         try:
@@ -173,16 +192,17 @@ class MenuItemListCreateView(APIView):
     flat list of all items in this branch (across all categories)
     create item (modifier groups added separately)
     """
-    permission_classes = [IsAuthenticated, IsOwner]
+    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
 
     def get(self, request, branch_id):
-        branch, err = _resolve_branch(request, branch_id)
+        # Allow any authenticated user to view menus (read-only)
+        branch, err = _resolve_branch(request, branch_id, read_only=True)
         if err:
             return err
         #  select_related avoids N+1 on category name
         items = (
             MenuItem.objects
-            .filter(branch=branch)
+            .filter(branch=branch, is_available=True)
             .select_related("category")
             .order_by("category__sort_order", "sort_order", "name")
         )
@@ -192,7 +212,8 @@ class MenuItemListCreateView(APIView):
         )
 
     def post(self, request, branch_id):
-        branch, err = _resolve_branch(request, branch_id)
+        # Only owners can create items
+        branch, err = _resolve_branch(request, branch_id, read_only=False)
         if err:
             return err
         
@@ -228,20 +249,24 @@ class MenuItemDetailView(APIView):
     update any item field
     delete item and all modifier groups
     """
-    permission_classes = [IsAuthenticated, IsOwner]
+    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
 
     def get(self, request, branch_id, item_id):
-        branch, err = _resolve_branch(request, branch_id)
+        # Allow any authenticated user to view item details (read-only)
+        branch, err = _resolve_branch(request, branch_id, read_only=True)
         if err:
             return err
         try:
-            item = MenuItemService.get_item_detail(branch, item_id)
-        except MenuNotFound as e:
-            return _menu_handle(e)
+            item = MenuItem.objects.prefetch_related("modifier_groups__options").get(
+                id=item_id, branch=branch, is_available=True
+            )
+        except MenuItem.DoesNotExist:
+            return _menu_handle(MenuNotFound(f"Menu item {item_id} not found or unavailable."))
         return APIResponse.success(data=MenuItemDetailSerializer(item).data)
 
     def patch(self, request, branch_id, item_id):
-        branch, err = _resolve_branch(request, branch_id)
+        # Only owners can update items
+        branch, err = _resolve_branch(request, branch_id, read_only=False)
         if err:
             return err
         try:
@@ -266,7 +291,8 @@ class MenuItemDetailView(APIView):
         )
 
     def delete(self, request, branch_id, item_id):
-        branch, err = _resolve_branch(request, branch_id)
+        # Only owners can delete items
+        branch, err = _resolve_branch(request, branch_id, read_only=False)
         if err:
             return err
         try:
