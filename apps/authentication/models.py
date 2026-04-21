@@ -9,6 +9,7 @@ from .managers import UserManager
 
 # --- User Model ------------------------------------------------------------------------------------------------
 
+
 class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
 
     class Role(models.TextChoices):
@@ -17,14 +18,22 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         OWNER = "owner", "Owner"
         ADMIN = "admin", "Admin"
 
-    phone = models.CharField(max_length=20, unique=True, null=True, blank=True, validators=[validate_sa_phone])
+    phone = models.CharField(
+        max_length=20,
+        unique=True,
+        null=True,
+        blank=True,
+        validators=[validate_sa_phone],
+    )
     username = models.CharField(max_length=50, unique=True, null=True, blank=True)
     email = models.EmailField(null=True, blank=True)
     full_name = models.CharField(max_length=150, blank=True, default="")
     avatar = models.ImageField(upload_to="avatars/%Y/%m/", null=True, blank=True)
 
     role = models.CharField(max_length=20, choices=Role.choices, db_index=True)
-    permissions = models.JSONField(default=list, blank=True, help_text="List of permissions for this user")
+    permissions = models.JSONField(
+        default=list, blank=True, help_text="List of permissions for this user"
+    )
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_phone_verified = models.BooleanField(default=False)
@@ -36,7 +45,7 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
 
     class Meta:
         db_table = "users"
-        indexes  = [
+        indexes = [
             models.Index(fields=["role", "is_active"]),
             models.Index(fields=["username"]),
         ]
@@ -47,6 +56,7 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
 
 # --- OTP -----------------------------------------------------------------------------------
 
+
 class OTPVerification(TimeStampedModel):
 
     class Purpose(models.TextChoices):
@@ -56,9 +66,9 @@ class OTPVerification(TimeStampedModel):
         OWNER_REGISTER = "owner_register", "Owner Register"
 
     MAX_ATTEMPTS = 5
-    TTL_SECONDS = 300   # 5 min
-    RESEND_COOLDOWN = 60    # 1 min between sends
-    MAX_SENDS_HOUR  = 5
+    TTL_SECONDS = 300  # 5 min
+    RESEND_COOLDOWN = 60  # 1 min between sends
+    MAX_SENDS_HOUR = 5
 
     phone = models.CharField(max_length=20, db_index=True)
     otp_code = models.CharField(max_length=6)
@@ -68,13 +78,17 @@ class OTPVerification(TimeStampedModel):
     is_used = models.BooleanField(default=False, db_index=True)
     expires_at = models.DateTimeField()
     verification_token = models.CharField(
-        max_length=64, unique=True, null=True, blank=True, db_index=True,
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
         help_text="Short-lived token returned after successful OTP verify.",
     )
 
     class Meta:
         db_table = "otp_verifications"
-        indexes  = [
+        indexes = [
             models.Index(fields=["phone", "purpose", "is_used"]),
             models.Index(fields=["verification_token"]),
         ]
@@ -95,7 +109,9 @@ class OTPVerification(TimeStampedModel):
         self.is_verified = True
         self.is_used = True
         self.verification_token = secrets.token_hex(32)
-        self.save(update_fields=["attempts", "is_verified", "is_used", "verification_token"])
+        self.save(
+            update_fields=["attempts", "is_verified", "is_used", "verification_token"]
+        )
         return True
 
     def __str__(self):

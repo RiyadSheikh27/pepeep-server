@@ -1,7 +1,3 @@
-"""
-All auth and restaurants related business logic lives here.
-Views only call services - no HTTP objects (Request/Response) in this file.
-"""
 import random
 import logging
 from datetime import timedelta
@@ -17,32 +13,41 @@ log = logging.getLogger(__name__)
 
 # --- Exceptions --------------------------------------------------------
 
+
 class AuthError(Exception):
     status_code = 400
+
 
 class OTPRateLimited(AuthError):
     status_code = 429
 
+
 class OTPExpired(AuthError):
     pass
+
 
 class OTPInvalid(AuthError):
     pass
 
+
 class OTPMaxAttempts(AuthError):
     status_code = 429
+
 
 class InvalidCredentials(AuthError):
     status_code = 401
 
+
 class InvalidToken(AuthError):
     pass
+
 
 class NotFound(AuthError):
     status_code = 404
 
 
 # --- OTP Service ----------------------------------------------
+
 
 class OTPService:
 
@@ -51,10 +56,12 @@ class OTPService:
         cls._check_rate_limit(phone, purpose)
 
         # Invalidate previous active OTPs for this phone + purpose
-        OTPVerification.objects.filter(phone=phone, purpose=purpose, is_used=False).update(is_used=True)
+        OTPVerification.objects.filter(
+            phone=phone, purpose=purpose, is_used=False
+        ).update(is_used=True)
 
         code = str(random.randint(100_000, 999_999))
-        otp  = OTPVerification.objects.create(
+        otp = OTPVerification.objects.create(
             phone=phone,
             otp_code=code,
             purpose=purpose,
@@ -62,7 +69,7 @@ class OTPService:
         )
         cls._send_sms(phone, code)
         log.info("OTP sent phone=%s purpose=%s", phone, purpose)
-        print(code)   # TODO: remove in production
+        print(code)  # TODO: remove in production
         return otp
 
     @classmethod
@@ -109,7 +116,11 @@ class OTPService:
         if count >= OTPVerification.MAX_SENDS_HOUR:
             raise OTPRateLimited("Too many OTP requests. Try again later.")
 
-        last = OTPVerification.objects.filter(phone=phone, purpose=purpose).order_by("-created_at").first()
+        last = (
+            OTPVerification.objects.filter(phone=phone, purpose=purpose)
+            .order_by("-created_at")
+            .first()
+        )
         if last:
             elapsed = (timezone.now() - last.created_at).total_seconds()
             if elapsed < OTPVerification.RESEND_COOLDOWN:
@@ -124,6 +135,7 @@ class OTPService:
 
 # --- JWT helper -----------------------------------------------------------
 
+
 def make_tokens(user: User, extra_claims: dict = None) -> dict:
     refresh = RefreshToken.for_user(user)
     refresh["role"] = user.role
@@ -133,6 +145,7 @@ def make_tokens(user: User, extra_claims: dict = None) -> dict:
 
 
 # --- Customer ------------------------------------------------------------
+
 
 class CustomerAuthService:
 
@@ -144,7 +157,11 @@ class CustomerAuthService:
 
         user, created = User.objects.get_or_create(
             phone=phone,
-            defaults={"role": User.Role.CUSTOMER, "is_phone_verified": True, "is_active": True},
+            defaults={
+                "role": User.Role.CUSTOMER,
+                "is_phone_verified": True,
+                "is_active": True,
+            },
         )
         if not user.is_active:
             raise InvalidCredentials("Your account has been deactivated.")
@@ -155,12 +172,14 @@ class CustomerAuthService:
     @transaction.atomic
     def change_phone(user: User, new_phone: str, otp_token: str) -> User:
         """Verify token for new_phone, then update user's phone."""
-        OTPService.get_verified_otp(new_phone, otp_token, OTPVerification.Purpose.CHANGE_PHONE)
+        OTPService.get_verified_otp(
+            new_phone, otp_token, OTPVerification.Purpose.CHANGE_PHONE
+        )
 
         if User.objects.filter(phone=new_phone).exclude(id=user.id).exists():
             raise AuthError("This phone number is already in use.")
 
-        user.phone             = new_phone
+        user.phone = new_phone
         user.is_phone_verified = True
         user.save(update_fields=["phone", "is_phone_verified", "updated_at"])
         return user
@@ -168,16 +187,15 @@ class CustomerAuthService:
 
 # --- Employee --------------------------------------------------------------
 
+
 class EmployeeAuthService:
 
     @staticmethod
     def login(username: str, password: str) -> tuple[User, dict]:
         try:
-            user = (
-                User.objects
-                .select_related("employee_profile__branch__restaurant")
-                .get(username=username, role=User.Role.EMPLOYEE)
-            )
+            user = User.objects.select_related(
+                "employee_profile__branch__restaurant"
+            ).get(username=username, role=User.Role.EMPLOYEE)
         except User.DoesNotExist:
             raise InvalidCredentials("Invalid username or password.")
 
@@ -187,17 +205,21 @@ class EmployeeAuthService:
         if not user.is_active:
             raise InvalidCredentials("Your account has been deactivated.")
 
-        emp    = user.employee_profile
-        tokens = make_tokens(user, extra_claims={
-            "branch_id":     str(emp.branch_id),
-            "branch_name":   emp.branch.name,
-            "restaurant_id": str(emp.branch.restaurant_id),
-            "permissions":   emp.permissions,
-        })
+        emp = user.employee_profile
+        tokens = make_tokens(
+            user,
+            extra_claims={
+                "branch_id": str(emp.branch_id),
+                "branch_name": emp.branch.name,
+                "restaurant_id": str(emp.branch.restaurant_id),
+                "permissions": emp.permissions,
+            },
+        )
         return user, tokens
 
 
 # --- Owner ---------------------------------------------------------------
+
 
 class OwnerAuthService:
 
@@ -219,9 +241,9 @@ class OwnerAuthService:
     @staticmethod
     def get_active_branches(user: User):
         from apps.restaurants.models import Branch
+
         return (
-            Branch.objects
-            .filter(restaurant__owner=user, is_active=True)
+            Branch.objects.filter(restaurant__owner=user, is_active=True)
             .select_related("restaurant")
             .order_by("restaurant__brand_name", "name")
         )
@@ -234,11 +256,18 @@ class OwnerAuthService:
         in a single atomic transaction.
         """
         from apps.restaurants.models import (
-            Restaurant, Branch, BranchOpeningHours, RestaurantBankDetail
+            Restaurant,
+            Branch,
+            BranchOpeningHours,
+            RestaurantBankDetail,
         )
 
         phone = data["phone"]
-        OTPService.get_verified_otp(phone, data["phone_verification_token"], OTPVerification.Purpose.OWNER_REGISTER)
+        OTPService.get_verified_otp(
+            phone,
+            data["phone_verification_token"],
+            OTPVerification.Purpose.OWNER_REGISTER,
+        )
 
         if User.objects.filter(phone=phone, role=User.Role.OWNER).exists():
             raise AuthError("An owner account with this phone already exists.")
@@ -265,7 +294,6 @@ class OwnerAuthService:
             "vat_certificate": data["vat_certificate"],
             "latitude": data.get("latitude"),
             "longitude": data.get("longitude"),
-
             "short_address": data.get("short_address", ""),
             "street_name": data["street_name"],
             "building_number": data["building_number"],
@@ -278,16 +306,17 @@ class OwnerAuthService:
             "status": Restaurant.Status.PENDING,
             "is_active": False,
         }
-        
+
         # Use provided category or default to "General"
         if data.get("category") is not None:
             restaurant_data["category"] = data["category"]
         else:
             from apps.restaurants.models import RestaurantCategory
+
             default_category = RestaurantCategory.objects.filter(name="General").first()
             if default_category:
                 restaurant_data["category"] = default_category
-        
+
         restaurant = Restaurant.objects.create(**restaurant_data)
 
         _create_branches(restaurant, branches)
@@ -308,6 +337,7 @@ class OwnerAuthService:
     @staticmethod
     def get_restaurant(user: User):
         from apps.restaurants.models import Restaurant
+
         try:
             return Restaurant.objects.select_related("bank_detail").get(owner=user)
         except Restaurant.DoesNotExist:
@@ -317,17 +347,16 @@ class OwnerAuthService:
     @transaction.atomic
     def add_branch(user: User, branch_data: dict):
         restaurant = OwnerAuthService.get_restaurant(user)
-        branches   = _create_branches(restaurant, [branch_data])
+        branches = _create_branches(restaurant, [branch_data])
         return branches[0]
 
     @staticmethod
     def get_branch(user: User, branch_id):
         from apps.restaurants.models import Branch
+
         try:
-            return (
-                Branch.objects
-                .prefetch_related("opening_hours")
-                .get(id=branch_id, restaurant__owner=user)
+            return Branch.objects.prefetch_related("opening_hours").get(
+                id=branch_id, restaurant__owner=user
             )
         except Branch.DoesNotExist:
             raise NotFound("Branch not found.")
@@ -346,6 +375,7 @@ class OwnerAuthService:
     def set_branch_opening_hours(user: User, branch_id, hours_list: list):
         """Replace all opening hours for a branch."""
         from apps.restaurants.models import BranchOpeningHours
+
         branch = OwnerAuthService.get_branch(user, branch_id)
         BranchOpeningHours.objects.filter(branch=branch).delete()
         _create_opening_hours(branch, hours_list)
@@ -356,14 +386,18 @@ class OwnerAuthService:
     def delete_branch(user: User, branch_id):
         """Hard-delete a branch. Only allowed if the restaurant has more than one branch."""
         from apps.restaurants.models import Branch
+
         branch = OwnerAuthService.get_branch(user, branch_id)
         remaining = Branch.objects.filter(restaurant=branch.restaurant).count()
         if remaining <= 1:
-            raise AuthError("Cannot delete the only branch. A restaurant must have at least one branch.")
+            raise AuthError(
+                "Cannot delete the only branch. A restaurant must have at least one branch."
+            )
         branch.delete()
 
 
 # --- Admin ----------------------------------------------------------------------------------------------
+
 
 class AdminAuthService:
 
@@ -385,7 +419,9 @@ class AdminAuthService:
     @staticmethod
     @transaction.atomic
     def reset_password(phone: str, otp_token: str, new_password: str) -> User:
-        OTPService.get_verified_otp(phone, otp_token, OTPVerification.Purpose.PASSWORD_RESET)
+        OTPService.get_verified_otp(
+            phone, otp_token, OTPVerification.Purpose.PASSWORD_RESET
+        )
 
         try:
             user = User.objects.get(phone=phone, role=User.Role.ADMIN)
@@ -400,20 +436,23 @@ class AdminAuthService:
     @transaction.atomic
     def approve_restaurant(restaurant_id) -> "Restaurant":
         from apps.restaurants.models import Restaurant
+
         try:
-            restaurant = Restaurant.objects.select_related("owner").get(id=restaurant_id)
+            restaurant = Restaurant.objects.select_related("owner").get(
+                id=restaurant_id
+            )
         except Restaurant.DoesNotExist:
             raise NotFound("Restaurant not found.")
 
         if restaurant.status == Restaurant.Status.APPROVED:
             raise AuthError("Restaurant is already approved.")
 
-        restaurant.status    = Restaurant.Status.APPROVED
+        restaurant.status = Restaurant.Status.APPROVED
         restaurant.is_active = True
         restaurant.save(update_fields=["status", "is_active", "updated_at"])
 
         # Activate the owner account
-        owner           = restaurant.owner
+        owner = restaurant.owner
         owner.is_active = True
         owner.save(update_fields=["is_active", "updated_at"])
 
@@ -424,6 +463,7 @@ class AdminAuthService:
     @transaction.atomic
     def reject_restaurant(restaurant_id, reason: str = "") -> "Restaurant":
         from apps.restaurants.models import Restaurant
+
         try:
             restaurant = Restaurant.objects.get(id=restaurant_id)
         except Restaurant.DoesNotExist:
@@ -438,6 +478,7 @@ class AdminAuthService:
     @transaction.atomic
     def approve_branch(branch_id) -> "Branch":
         from apps.restaurants.models import Branch
+
         try:
             branch = Branch.objects.select_related("restaurant").get(id=branch_id)
         except Branch.DoesNotExist:
@@ -455,9 +496,9 @@ class AdminAuthService:
         qs = User.objects.filter(role=User.Role.CUSTOMER).order_by("-created_at")
         if search:
             qs = qs.filter(
-                models.Q(phone__icontains=search) |
-                models.Q(full_name__icontains=search) |
-                models.Q(username__icontains=search)
+                models.Q(phone__icontains=search)
+                | models.Q(full_name__icontains=search)
+                | models.Q(username__icontains=search)
             )
         if is_active in ("true", "false"):
             qs = qs.filter(is_active=(is_active == "true"))
@@ -492,11 +533,12 @@ class AdminAuthService:
         after the restaurant annotation step.
         """
         from apps.restaurants.models import Restaurant
+
         qs = User.objects.filter(role=User.Role.OWNER).order_by("-created_at")
         if search:
             qs = qs.filter(
-                models.Q(phone__icontains=search) |
-                models.Q(full_name__icontains=search)
+                models.Q(phone__icontains=search)
+                | models.Q(full_name__icontains=search)
             )
         if is_active in ("true", "false"):
             qs = qs.filter(is_active=(is_active == "true"))
@@ -507,7 +549,9 @@ class AdminAuthService:
         users = list(qs)
         restaurant_map = {
             r.owner_id: r
-            for r in Restaurant.objects.filter(owner__in=users).only("owner_id", "brand_name", "status")
+            for r in Restaurant.objects.filter(owner__in=users).only(
+                "owner_id", "brand_name", "status"
+            )
         }
         for user in users:
             user._restaurant = restaurant_map.get(user.id)
@@ -516,11 +560,16 @@ class AdminAuthService:
     @staticmethod
     def get_owner(owner_id) -> User:
         from apps.restaurants.models import Restaurant
+
         try:
             user = User.objects.get(id=owner_id, role=User.Role.OWNER)
         except User.DoesNotExist:
             raise NotFound("Owner not found.")
-        user._restaurant = Restaurant.objects.filter(owner=user).only("owner_id", "brand_name", "status").first()
+        user._restaurant = (
+            Restaurant.objects.filter(owner=user)
+            .only("owner_id", "brand_name", "status")
+            .first()
+        )
         return user
 
     @staticmethod
@@ -540,15 +589,14 @@ class AdminAuthService:
     @staticmethod
     def list_employees(search: str = "", is_active: str = "", restaurant_id: str = ""):
         from apps.restaurants.models import Employee as Emp
-        qs = (
-            Emp.objects
-            .select_related("user", "branch", "branch__restaurant")
-            .order_by("-created_at")
-        )
+
+        qs = Emp.objects.select_related(
+            "user", "branch", "branch__restaurant"
+        ).order_by("-created_at")
         if search:
             qs = qs.filter(
-                models.Q(user__username__icontains=search) |
-                models.Q(user__phone__icontains=search)
+                models.Q(user__username__icontains=search)
+                | models.Q(user__phone__icontains=search)
             )
         if is_active in ("true", "false"):
             qs = qs.filter(user__is_active=(is_active == "true"))
@@ -561,12 +609,13 @@ class AdminAuthService:
     @staticmethod
     def list_restaurants(search: str = "", status: str = "", category: str = ""):
         from apps.restaurants.models import Restaurant
+
         qs = Restaurant.objects.select_related("owner").order_by("-created_at")
         if search:
             qs = qs.filter(
-                models.Q(brand_name__icontains=search) |
-                models.Q(legal_name__icontains=search) |
-                models.Q(owner__phone__icontains=search)
+                models.Q(brand_name__icontains=search)
+                | models.Q(legal_name__icontains=search)
+                | models.Q(owner__phone__icontains=search)
             )
         if status:
             qs = qs.filter(status=status)
@@ -577,10 +626,10 @@ class AdminAuthService:
     @staticmethod
     def get_restaurant(restaurant_id):
         from apps.restaurants.models import Restaurant
+
         try:
             return (
-                Restaurant.objects
-                .select_related("owner", "bank_detail")
+                Restaurant.objects.select_related("owner", "bank_detail")
                 .prefetch_related("branches__opening_hours")
                 .get(id=restaurant_id)
             )
@@ -590,12 +639,17 @@ class AdminAuthService:
     @staticmethod
     def list_branches(search: str = "", is_active: str = "", restaurant_id: str = ""):
         from apps.restaurants.models import Branch
-        qs = Branch.objects.select_related("restaurant").prefetch_related("opening_hours").order_by("-created_at")
+
+        qs = (
+            Branch.objects.select_related("restaurant")
+            .prefetch_related("opening_hours")
+            .order_by("-created_at")
+        )
         if search:
             qs = qs.filter(
-                models.Q(name__icontains=search) |
-                models.Q(city__icontains=search) |
-                models.Q(restaurant__brand_name__icontains=search)
+                models.Q(name__icontains=search)
+                | models.Q(city__icontains=search)
+                | models.Q(restaurant__brand_name__icontains=search)
             )
         if is_active in ("true", "false"):
             qs = qs.filter(is_active=(is_active == "true"))
@@ -606,10 +660,10 @@ class AdminAuthService:
     @staticmethod
     def get_branch(branch_id):
         from apps.restaurants.models import Branch
+
         try:
             return (
-                Branch.objects
-                .select_related("restaurant")
+                Branch.objects.select_related("restaurant")
                 .prefetch_related("opening_hours")
                 .get(id=branch_id)
             )
@@ -620,6 +674,7 @@ class AdminAuthService:
     @transaction.atomic
     def reject_branch(branch_id) -> "Branch":
         from apps.restaurants.models import Branch
+
         try:
             branch = Branch.objects.select_related("restaurant").get(id=branch_id)
         except Branch.DoesNotExist:
@@ -633,11 +688,20 @@ class AdminAuthService:
 
 # --- Private helpers -----------------------------------------------------------------------------
 
+
 def _normalise_shifts(shifts: list) -> list:
     return [
         {
-            "open":  s["open"].strftime("%H:%M") if hasattr(s["open"], "strftime") else s["open"],
-            "close": s["close"].strftime("%H:%M") if hasattr(s["close"], "strftime") else s["close"],
+            "open": (
+                s["open"].strftime("%H:%M")
+                if hasattr(s["open"], "strftime")
+                else s["open"]
+            ),
+            "close": (
+                s["close"].strftime("%H:%M")
+                if hasattr(s["close"], "strftime")
+                else s["close"]
+            ),
         }
         for s in shifts
     ]
@@ -645,6 +709,7 @@ def _normalise_shifts(shifts: list) -> list:
 
 def _create_opening_hours(branch, hours_list: list):
     from apps.restaurants.models import BranchOpeningHours
+
     for h in hours_list:
         BranchOpeningHours.objects.create(
             branch=branch,
@@ -656,6 +721,7 @@ def _create_opening_hours(branch, hours_list: list):
 
 def _create_branches(restaurant, branches: list) -> list:
     from apps.restaurants.models import Branch
+
     created = []
     for b in branches:
         branch = Branch.objects.create(
@@ -665,7 +731,6 @@ def _create_branches(restaurant, branches: list) -> list:
             full_address=b["full_address"],
             min_order=b["min_order"],
             is_active=False,
-
             # --- New fields ---
             latitude=b.get("latitude"),
             longitude=b.get("longitude"),

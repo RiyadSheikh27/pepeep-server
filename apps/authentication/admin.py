@@ -7,6 +7,7 @@ from .models import User, OTPVerification
 
 # --- Custom User Change Form -----------------------------------
 
+
 class UserChangeForm(forms.ModelForm):
     password = forms.CharField(required=False)
 
@@ -19,6 +20,7 @@ class UserChangeForm(forms.ModelForm):
 
 
 # --- Custom User Creation Form ----------------------------------
+
 
 class UserCreationForm(forms.ModelForm):
     password = forms.CharField(widget=forms.PasswordInput)
@@ -36,6 +38,7 @@ class UserCreationForm(forms.ModelForm):
 
 
 # --- Admin Config ----------------------------------------------
+
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
@@ -59,19 +62,33 @@ class UserAdmin(BaseUserAdmin):
 
     readonly_fields = ("created_at", "updated_at", "last_login")
 
-
     fieldsets = (
         (None, {"fields": ("phone", "password")}),
         ("Personal Info", {"fields": ("username", "email", "full_name", "avatar")}),
-        ("Permissions", {"fields": ("role", "is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
+        (
+            "Permissions",
+            {
+                "fields": (
+                    "role",
+                    "is_active",
+                    "is_staff",
+                    "is_superuser",
+                    "groups",
+                    "user_permissions",
+                )
+            },
+        ),
         ("Important Dates", {"fields": ("last_login", "created_at", "updated_at")}),
     )
 
     add_fieldsets = (
-        (None, {
-            "classes": ("wide",),
-            "fields": ("phone", "password"),
-        }),
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": ("phone", "password"),
+            },
+        ),
     )
 
 

@@ -1,8 +1,3 @@
-""" 
-All Menu business logic Here
-Views only call services - no HTTP objects (Request/Response) in this file.
-"""
-
 import logging
 from django.db import transaction
 from django.db.models import Count, Prefetch

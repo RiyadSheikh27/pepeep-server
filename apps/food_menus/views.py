@@ -33,13 +33,15 @@ from .services import (
 
 # --- shared helper --------------------------------------------------------
 
+
 def _menu_handle(exc):
-    """ map a MenuError to an APIResponse error."""
+    """map a MenuError to an APIResponse error."""
     return APIResponse.error(
         errors={"detail": [str(exc)]},
         message=str(exc),
         status_code=getattr(exc, "status_code", 400),
     )
+
 
 class MenuByCategoryView(APIView):
     """
@@ -47,6 +49,7 @@ class MenuByCategoryView(APIView):
     Returns all RestaurantCategories that have items in this branch,
     with full item → modifier group → option nesting.
     """
+
     permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
 
     def get(self, request, branch_id):
@@ -65,7 +68,7 @@ def _resolve_branch(request, branch_id, read_only=False):
     """
     Resolves the branch and returns (branch, None) on success
     or (None, error_response) on failure.
-    
+
     If read_only=True, allows any authenticated user to access active branches.
     If read_only=False, only allows the branch owner to access.
     """
@@ -73,12 +76,13 @@ def _resolve_branch(request, branch_id, read_only=False):
         # For read-only access (GET requests), allow any authenticated user to view any active branch
         if read_only:
             from apps.restaurants.models import Branch
+
             try:
                 branch = Branch.objects.get(id=branch_id, is_active=True)
                 return branch, None
             except Branch.DoesNotExist:
                 raise MenuNotFound(f"Branch {branch_id} not found or inactive.")
-        
+
         # For write access, require branch ownership
         branch = _get_branch(request.user, branch_id)
         return branch, None
@@ -88,11 +92,13 @@ def _resolve_branch(request, branch_id, read_only=False):
 
 # --- Category endpoints ---------------------------------------------------
 
+
 class MenuCategoryListCreateView(APIView):
     """
     list of categories with item_count annotation (e.g. Burgers (7))
     create a new category
     """
+
     permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
 
     def get(self, request, branch_id):
@@ -133,6 +139,7 @@ class MenuCategoryDetailView(APIView):
     update name / is_active / sort_order
     delete category and all its items
     """
+
     permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
 
     def get(self, request, branch_id, category_id):
@@ -165,7 +172,9 @@ class MenuCategoryDetailView(APIView):
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         try:
-            category = MenuCategoryService.update_category(branch, category_id, s.validated_data)
+            category = MenuCategoryService.update_category(
+                branch, category_id, s.validated_data
+            )
         except (MenuNotFound, MenuError) as e:
             return _menu_handle(e)
         return APIResponse.success(
@@ -187,11 +196,13 @@ class MenuCategoryDetailView(APIView):
 
 # --- Item endpoints ---------------------------------------------------
 
+
 class MenuItemListCreateView(APIView):
     """
     flat list of all items in this branch (across all categories)
     create item (modifier groups added separately)
     """
+
     permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
 
     def get(self, request, branch_id):
@@ -201,8 +212,7 @@ class MenuItemListCreateView(APIView):
             return err
         #  select_related avoids N+1 on category name
         items = (
-            MenuItem.objects
-            .filter(branch=branch, is_available=True)
+            MenuItem.objects.filter(branch=branch, is_available=True)
             .select_related("category")
             .order_by("category__sort_order", "sort_order", "name")
         )
@@ -216,17 +226,14 @@ class MenuItemListCreateView(APIView):
         branch, err = _resolve_branch(request, branch_id, read_only=False)
         if err:
             return err
-        
+
         s = MenuItemWriteSerializer(
             data=request.data,
             context={"request": request, "branch": branch},
         )
         if not s.is_valid():
-            return APIResponse.error(
-                errors=s.errors,
-                message="Invalid input."
-            )
-        
+            return APIResponse.error(errors=s.errors, message="Invalid input.")
+
         try:
             # category is resolved by the serializer into validated_data["category"]
             item = MenuItemService.create_item(branch, None, s.validated_data)
@@ -239,7 +246,7 @@ class MenuItemListCreateView(APIView):
             error_msg = str(e)
             return APIResponse.error(
                 errors={"detail": [error_msg]},
-                message=error_msg if error_msg else "Failed to create menu item."
+                message=error_msg if error_msg else "Failed to create menu item.",
             )
 
 
@@ -249,6 +256,7 @@ class MenuItemDetailView(APIView):
     update any item field
     delete item and all modifier groups
     """
+
     permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
 
     def get(self, request, branch_id, item_id):
@@ -261,7 +269,9 @@ class MenuItemDetailView(APIView):
                 id=item_id, branch=branch, is_available=True
             )
         except MenuItem.DoesNotExist:
-            return _menu_handle(MenuNotFound(f"Menu item {item_id} not found or unavailable."))
+            return _menu_handle(
+                MenuNotFound(f"Menu item {item_id} not found or unavailable.")
+            )
         return APIResponse.success(data=MenuItemDetailSerializer(item).data)
 
     def patch(self, request, branch_id, item_id):
@@ -307,6 +317,7 @@ class MenuItemToggleAvailabilityView(APIView):
     /menu/branches/{branch_id}/items/{item_id}/toggle-availability/
     Flips is_available without needing a PATCH body.
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def post(self, request, branch_id, item_id):
@@ -318,10 +329,14 @@ class MenuItemToggleAvailabilityView(APIView):
         except MenuNotFound as e:
             return _menu_handle(e)
         status = "available" if item.is_available else "unavailable"
-        return APIResponse.success(message=f"Item marked as {status}.", data={"is_available": item.is_available})
+        return APIResponse.success(
+            message=f"Item marked as {status}.",
+            data={"is_available": item.is_available},
+        )
 
 
 # --- Modifier Group endpoints -------------------------------------------------
+
 
 class ModifierGroupListCreateView(APIView):
     """
@@ -329,6 +344,7 @@ class ModifierGroupListCreateView(APIView):
     GET  → all modifier groups for an item, with nested options (no N+1)
     POST → step 2: add a modifier group to an item
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def get(self, request, branch_id, item_id):
@@ -369,6 +385,7 @@ class ModifierGroupDetailView(APIView):
     update group name / type / min_select / max_select
     delete group and all its options
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def patch(self, request, branch_id, item_id, group_id):
@@ -379,7 +396,9 @@ class ModifierGroupDetailView(APIView):
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         try:
-            group = ModifierGroupService.update_group(branch, item_id, group_id, s.validated_data)
+            group = ModifierGroupService.update_group(
+                branch, item_id, group_id, s.validated_data
+            )
         except MenuNotFound as e:
             return _menu_handle(e)
         group.option_count = group.options.count()
@@ -401,11 +420,13 @@ class ModifierGroupDetailView(APIView):
 
 # ---  Modifier Option endpoints -------------------------------------------------
 
+
 class ModifierOptionCreateView(APIView):
     """
     Menu - newly added
     POST → add a new option to a modifier group
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def post(self, request, branch_id, item_id, group_id):
@@ -416,7 +437,9 @@ class ModifierOptionCreateView(APIView):
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         try:
-            option = ModifierOptionService.create_option(branch, item_id, group_id, s.validated_data)
+            option = ModifierOptionService.create_option(
+                branch, item_id, group_id, s.validated_data
+            )
         except MenuNotFound as e:
             return _menu_handle(e)
         return APIResponse.success(
@@ -431,6 +454,7 @@ class ModifierOptionDetailView(APIView):
     update option name / price / option_type
     delete a single option
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def patch(self, request, branch_id, item_id, group_id, option_id):
@@ -441,7 +465,9 @@ class ModifierOptionDetailView(APIView):
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         try:
-            option = ModifierOptionService.update_option(branch, item_id, group_id, option_id, s.validated_data)
+            option = ModifierOptionService.update_option(
+                branch, item_id, group_id, option_id, s.validated_data
+            )
         except MenuNotFound as e:
             return _menu_handle(e)
         return APIResponse.success(
@@ -458,7 +484,8 @@ class ModifierOptionDetailView(APIView):
         except MenuNotFound as e:
             return _menu_handle(e)
         return APIResponse.success(message="Option deleted.")
-    
+
+
 # --- Bulk Menu Item Add (Step 2) --------------------------------------------------------------
 class ModifierBulkView(APIView):
     """
@@ -466,6 +493,7 @@ class ModifierBulkView(APIView):
     PUT    /menu/branches/{branch_id}/items/{item_id}/modifiers/  — replace all groups + options
     DELETE /menu/branches/{branch_id}/items/{item_id}/modifiers/  — delete all groups + options
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def _handle_set(self, request, branch_id, item_id):
@@ -484,7 +512,9 @@ class ModifierBulkView(APIView):
             return APIResponse.error(errors=s.errors, message="Invalid input.")
 
         try:
-            item = ModifierGroupService.bulk_set_modifiers(branch, item_id, s.validated_data)
+            item = ModifierGroupService.bulk_set_modifiers(
+                branch, item_id, s.validated_data
+            )
         except MenuNotFound as e:
             return _menu_handle(e)
 

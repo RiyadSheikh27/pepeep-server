@@ -2,7 +2,12 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
 from rest_framework.response import Response
 from apps.utils.custom_response import APIResponse
-from .services import RestaurantCategoryService, BranchSearchService, RestaurantError, RestaurantNotFound
+from .services import (
+    RestaurantCategoryService,
+    BranchSearchService,
+    RestaurantError,
+    RestaurantNotFound,
+)
 from .serializers import (
     RestaurantCategoryListSerializer,
     RestaurantCategoryDetailSerializer,
@@ -12,6 +17,7 @@ from .serializers import (
 
 # --- Shared helper method -----------------------------------------------------------------------
 
+
 def _handle_exception(exc):
     """Map an exception to an APIResponse error."""
     return APIResponse.error(
@@ -20,29 +26,32 @@ def _handle_exception(exc):
         status_code=getattr(exc, "status_code", 400),
     )
 
+
 # --- Restaurant Category Views -----------------------------------------------------------------------
+
 
 class RestaurantCategoryListCreateView(APIView):
     """
     GET  /api/v1/categories/ - List all categories with pagination and search
     POST /api/v1/categories/ - Create a new category (admin only)
     """
+
     permission_classes = [IsAuthenticatedOrReadOnly]
 
     def get(self, request):
         """List categories with pagination and search"""
-        search = request.query_params.get('search', '')
-        page = request.query_params.get('page', 1)
-        
+        search = request.query_params.get("search", "")
+        page = request.query_params.get("page", 1)
+
         try:
             page = int(page)
         except (ValueError, TypeError):
             page = 1
-        
+
         items, total_count, page_number, total_pages, has_next, has_previous = (
             RestaurantCategoryService.list_categories(search=search, page=page)
         )
-        
+
         return APIResponse.success(
             data=RestaurantCategoryListSerializer(items, many=True).data,
             meta={
@@ -60,13 +69,12 @@ class RestaurantCategoryListCreateView(APIView):
         # You can add additional admin checks here if needed
         serializer = RestaurantCategoryWriteSerializer(data=request.data)
         if not serializer.is_valid():
-            return APIResponse.error(
-                errors=serializer.errors,
-                message="Invalid input."
-            )
-        
+            return APIResponse.error(errors=serializer.errors, message="Invalid input.")
+
         try:
-            category = RestaurantCategoryService.create_category(serializer.validated_data)
+            category = RestaurantCategoryService.create_category(
+                serializer.validated_data
+            )
             return APIResponse.success(
                 message="Category created successfully.",
                 data=RestaurantCategoryDetailSerializer(category).data,
@@ -82,6 +90,7 @@ class RestaurantCategoryDetailView(APIView):
     PATCH  /api/v1/categories/{id}/ - Update category
     DELETE /api/v1/categories/{id}/ - Delete category
     """
+
     permission_classes = [IsAuthenticatedOrReadOnly]
 
     def get(self, request, category_id):
@@ -100,22 +109,18 @@ class RestaurantCategoryDetailView(APIView):
             category = RestaurantCategoryService.get_category_detail(category_id)
         except RestaurantNotFound as e:
             return _handle_exception(e)
-        
+
         serializer = RestaurantCategoryWriteSerializer(
             category,
             data=request.data,
             partial=True,
         )
         if not serializer.is_valid():
-            return APIResponse.error(
-                errors=serializer.errors,
-                message="Invalid input."
-            )
-        
+            return APIResponse.error(errors=serializer.errors, message="Invalid input.")
+
         try:
             updated_category = RestaurantCategoryService.update_category(
-                category_id,
-                serializer.validated_data
+                category_id, serializer.validated_data
             )
             return APIResponse.success(
                 message="Category updated successfully.",
@@ -137,6 +142,7 @@ class RestaurantCategoryDetailView(APIView):
 
 # --- Restaurant Search View -----------------------------------------------------------------------
 
+
 class RestaurantSearchView(APIView):
     """
     GET /restaurants/search/
@@ -148,6 +154,7 @@ class RestaurantSearchView(APIView):
       user_lon    — float, user's longitude
       page        — page number (default 1)
     """
+
     permission_classes = [IsAuthenticatedOrReadOnly]
 
     def get(self, request):
@@ -161,16 +168,22 @@ class RestaurantSearchView(APIView):
             page = 1
 
         try:
-            user_lat = float(request.query_params.get("user_lat")) \
-                if request.query_params.get("user_lat") else None
-            user_lon = float(request.query_params.get("user_lon")) \
-                if request.query_params.get("user_lon") else None
+            user_lat = (
+                float(request.query_params.get("user_lat"))
+                if request.query_params.get("user_lat")
+                else None
+            )
+            user_lon = (
+                float(request.query_params.get("user_lon"))
+                if request.query_params.get("user_lon")
+                else None
+            )
         except (ValueError, TypeError):
             user_lat = None
             user_lon = None
 
         items, total_count, page_number, total_pages, has_next, has_previous = (
-            BranchSearchService.search_branches( 
+            BranchSearchService.search_branches(
                 query=query,
                 category_id=category_id,
                 city=city,
@@ -181,14 +194,17 @@ class RestaurantSearchView(APIView):
         )
 
         return APIResponse.success(
-            data=BranchSearchSerializer(items, many=True).data, 
+            data=BranchSearchSerializer(items, many=True).data,
             meta={
                 "total": total_count,
                 "page": page_number,
                 "total_pages": total_pages,
                 "has_next": has_next,
                 "has_previous": has_previous,
-                "user_location": {"latitude": user_lat, "longitude": user_lon}
-                if user_lat is not None and user_lon is not None else None,
+                "user_location": (
+                    {"latitude": user_lat, "longitude": user_lon}
+                    if user_lat is not None and user_lon is not None
+                    else None
+                ),
             },
         )

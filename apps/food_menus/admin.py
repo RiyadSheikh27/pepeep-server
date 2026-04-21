@@ -4,6 +4,7 @@ from .models import MenuCategory, MenuItem, ModifierGroup, ModifierOption
 
 # --- Inline for ModifierOption inside ModifierGroup ----------------------------
 
+
 class ModifierOptionInline(admin.TabularInline):
     model = ModifierOption
     extra = 1
@@ -12,6 +13,7 @@ class ModifierOptionInline(admin.TabularInline):
 
 
 # --- Inline for ModifierGroup inside MenuItem ----------------------------------
+
 
 class ModifierGroupInline(admin.TabularInline):
     model = ModifierGroup
@@ -23,6 +25,7 @@ class ModifierGroupInline(admin.TabularInline):
 
 # --- Menu Category Admin -------------------------------------------------------
 
+
 @admin.register(MenuCategory)
 class MenuCategoryAdmin(admin.ModelAdmin):
     list_display = ("name", "branch", "is_active", "sort_order", "created_at")
@@ -33,6 +36,7 @@ class MenuCategoryAdmin(admin.ModelAdmin):
 
 
 # --- Menu Item Admin -----------------------------------------------------------
+
 
 @admin.register(MenuItem)
 class MenuItemAdmin(admin.ModelAdmin):
@@ -53,20 +57,23 @@ class MenuItemAdmin(admin.ModelAdmin):
     inlines = [ModifierGroupInline]
 
     fieldsets = (
-        ("Basic Info", {
-            "fields": ("branch", "category", "name", "description", "photo")
-        }),
-        ("Pricing & Availability", {
-            "fields": ("price", "is_available", "sort_order")
-        }),
-        ("Extra Info", {
-            "fields": ("extra_prep_time", "calories", "dietary_info"),
-            "classes": ("collapse",),
-        }),
+        (
+            "Basic Info",
+            {"fields": ("branch", "category", "name", "description", "photo")},
+        ),
+        ("Pricing & Availability", {"fields": ("price", "is_available", "sort_order")}),
+        (
+            "Extra Info",
+            {
+                "fields": ("extra_prep_time", "calories", "dietary_info"),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
 
 # --- Modifier Group Admin ------------------------------------------------------
+
 
 @admin.register(ModifierGroup)
 class ModifierGroupAdmin(admin.ModelAdmin):
@@ -79,6 +86,7 @@ class ModifierGroupAdmin(admin.ModelAdmin):
 
 
 # --- Modifier Option Admin -----------------------------------------------------
+
 
 @admin.register(ModifierOption)
 class ModifierOptionAdmin(admin.ModelAdmin):

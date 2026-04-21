@@ -4,9 +4,8 @@ from django.db import models
 from apps.utils.models import TimeStampedModel
 
 
-# ─────────────────────────────────────────────
-#  CAR
-# ─────────────────────────────────────────────
+#  --- CAR ---------------------------------------------------------------------------
+
 
 class Car(TimeStampedModel):
     """Customer's car saved for curbside pickup."""
@@ -16,9 +15,9 @@ class Car(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name="cars",
     )
-    car_model    = models.CharField(max_length=100)
+    car_model = models.CharField(max_length=100)
     plate_number = models.CharField(max_length=20)
-    color        = models.CharField(max_length=7, help_text="Hex color e.g. #FF0000")
+    color = models.CharField(max_length=7, help_text="Hex color e.g. #FF0000")
 
     class Meta:
         db_table = "cars"
@@ -27,9 +26,8 @@ class Car(TimeStampedModel):
         return f"{self.car_model} — {self.plate_number}"
 
 
-# ─────────────────────────────────────────────
-#  CART  (unchanged — keep existing behaviour)
-# ─────────────────────────────────────────────
+#  --- CART ---------------------------------------------------------------------------
+
 
 class Cart(TimeStampedModel):
     """One active cart per customer per branch."""
@@ -46,7 +44,7 @@ class Cart(TimeStampedModel):
     )
 
     class Meta:
-        db_table      = "carts"
+        db_table = "carts"
         unique_together = [["customer", "branch"]]
 
     def __str__(self):
@@ -60,16 +58,18 @@ class Cart(TimeStampedModel):
 class CartItem(TimeStampedModel):
     """A single menu item inside a cart."""
 
-    cart      = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="items")
+    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="items")
     menu_item = models.ForeignKey(
         "food_menus.MenuItem",
         on_delete=models.CASCADE,
         related_name="cart_items",
     )
-    quantity         = models.PositiveSmallIntegerField(default=1)
-    selected_options = models.JSONField(default=list, help_text="List of selected ModifierOption IDs")
-    item_price       = models.DecimalField(max_digits=8, decimal_places=2)
-    options_price    = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    quantity = models.PositiveSmallIntegerField(default=1)
+    selected_options = models.JSONField(
+        default=list, help_text="List of selected ModifierOption IDs"
+    )
+    item_price = models.DecimalField(max_digits=8, decimal_places=2)
+    options_price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
 
     class Meta:
         db_table = "cart_items"
@@ -82,33 +82,37 @@ class CartItem(TimeStampedModel):
         return (self.item_price + self.options_price) * self.quantity
 
 
-# ─────────────────────────────────────────────
-#  PAYMENT
-# ─────────────────────────────────────────────
+#  --- PAYMENT ---------------------------------------------------------------------------
+
 
 class Payment(TimeStampedModel):
 
     class Method(models.TextChoices):
         STRIPE = "stripe", "Stripe"
-        CASH   = "cash",   "Cash"
+        CASH = "cash", "Cash"
 
     class Status(models.TextChoices):
-        PENDING   = "pending",   "Pending"
-        PAID      = "paid",      "Paid"
-        FAILED    = "failed",    "Failed"
-        REFUNDED  = "refunded",  "Refunded"
+        PENDING = "pending", "Pending"
+        PAID = "paid", "Paid"
+        FAILED = "failed", "Failed"
+        REFUNDED = "refunded", "Refunded"
 
     # stripe_intent_id is set when method=STRIPE at checkout initiation
-    stripe_intent_id = models.CharField(max_length=200, null=True, blank=True, db_index=True)
-    method           = models.CharField(max_length=10, choices=Method.choices)
-    status           = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
-    amount           = models.DecimalField(max_digits=10, decimal_places=2)
+    stripe_intent_id = models.CharField(
+        max_length=200, null=True, blank=True, db_index=True
+    )
+    method = models.CharField(max_length=10, choices=Method.choices)
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.PENDING
+    )
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
 
     # cash only — filled when employee clicks "Receive Cash"
     cash_received_by = models.ForeignKey(
         "authentication.User",
         on_delete=models.SET_NULL,
-        null=True, blank=True,
+        null=True,
+        blank=True,
         related_name="cash_received_payments",
     )
     cash_received_at = models.DateTimeField(null=True, blank=True)
@@ -120,18 +124,17 @@ class Payment(TimeStampedModel):
         return f"{self.method} — {self.status} — {self.amount}"
 
 
-# ─────────────────────────────────────────────
-#  ORDER
-# ─────────────────────────────────────────────
+#  --- ORDER ---------------------------------------------------------------------------
+
 
 class Order(TimeStampedModel):
 
     class Status(models.TextChoices):
-        ORDER_SENT  = "order_sent",  "Order Sent"
-        PREPARING   = "preparing",   "Preparing"
-        READY       = "ready",       "Ready"
-        DELIVERED   = "delivered",   "Delivered"
-        CANCELLED   = "cancelled",   "Cancelled"
+        ORDER_SENT = "order_sent", "Order Sent"
+        PREPARING = "preparing", "Preparing"
+        READY = "ready", "Ready"
+        DELIVERED = "delivered", "Delivered"
+        CANCELLED = "cancelled", "Cancelled"
 
     order_number = models.CharField(max_length=20, unique=True, editable=False)
 
@@ -150,39 +153,47 @@ class Order(TimeStampedModel):
     car = models.ForeignKey(
         Car,
         on_delete=models.SET_NULL,
-        null=True, blank=True,
+        null=True,
+        blank=True,
         related_name="orders",
     )
     payment = models.OneToOneField(
         Payment,
         on_delete=models.SET_NULL,
-        null=True, blank=True,
+        null=True,
+        blank=True,
         related_name="order",
     )
 
-    status      = models.CharField(max_length=20, choices=Status.choices, default=Status.ORDER_SENT, db_index=True)
-    note        = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.ORDER_SENT, db_index=True
+    )
+    note = models.TextField(blank=True, default="")
     pickup_time = models.CharField(max_length=50, blank=True, default="")
 
-    subtotal    = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     service_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    vat         = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    total       = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    vat = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     # QR delivery token — generated on order creation, cleared after scan
     qr_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
 
     # Arrival flag — set by Celery task when user taps "I Arrived"
-    user_arrived    = models.BooleanField(default=False)
+    user_arrived = models.BooleanField(default=False)
     user_arrived_at = models.DateTimeField(null=True, blank=True)
 
     # Customer location snapshot at arrival (optional, for distance/ETA)
-    arrived_lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    arrived_lon = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    arrived_lat = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True
+    )
+    arrived_lon = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True
+    )
 
     # Status timestamps
     preparing_at = models.DateTimeField(null=True, blank=True)
-    ready_at     = models.DateTimeField(null=True, blank=True)
+    ready_at = models.DateTimeField(null=True, blank=True)
     delivered_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
 
@@ -201,16 +212,16 @@ class Order(TimeStampedModel):
     @staticmethod
     def _generate_order_number():
         import random
+
         return f"ORD-{random.randint(10000, 99999)}"
 
 
-# ─────────────────────────────────────────────
-#  ORDER ITEM  (snapshot at time of order)
-# ─────────────────────────────────────────────
+#  --- ORDER ITEM  (snapshot at time of order) ---------------------------------------------------------------------------
+
 
 class OrderItem(TimeStampedModel):
 
-    order     = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     menu_item = models.ForeignKey(
         "food_menus.MenuItem",
         on_delete=models.SET_NULL,
@@ -218,10 +229,10 @@ class OrderItem(TimeStampedModel):
         related_name="order_items",
     )
     # snapshots — survive if menu item is edited later
-    name          = models.CharField(max_length=200)
-    price         = models.DecimalField(max_digits=8, decimal_places=2)
+    name = models.CharField(max_length=200)
+    price = models.DecimalField(max_digits=8, decimal_places=2)
     options_price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
-    quantity      = models.PositiveSmallIntegerField(default=1)
+    quantity = models.PositiveSmallIntegerField(default=1)
     # snapshot: [{"name": "Extra Cheese", "price": "2.00"}, ...]
     selected_options = models.JSONField(default=list)
 
@@ -236,21 +247,22 @@ class OrderItem(TimeStampedModel):
         return f"{self.name} x{self.quantity}"
 
 
-# ─────────────────────────────────────────────
-#  FEEDBACK
-# ─────────────────────────────────────────────
+#  --- FEEDBACK ---------------------------------------------------------------------------
+
 
 class Feedback(TimeStampedModel):
     """Post-delivery rating + comment from customer."""
 
-    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name="feedback")
+    order = models.OneToOneField(
+        Order, on_delete=models.CASCADE, related_name="feedback"
+    )
     customer = models.ForeignKey(
         "authentication.User",
         on_delete=models.CASCADE,
         related_name="feedbacks",
     )
-    stars    = models.PositiveSmallIntegerField()   # 1–5
-    comment  = models.TextField(blank=True, default="")
+    stars = models.PositiveSmallIntegerField()  # 1–5
+    comment = models.TextField(blank=True, default="")
 
     class Meta:
         db_table = "order_feedbacks"

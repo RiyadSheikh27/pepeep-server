@@ -11,23 +11,25 @@ def mark_user_arrived(self, order_id: str, latitude=None, longitude=None):
       1. Update order.user_arrived + coords in the DB
       2. Build the arrival payload (order number, items, car details)
       3. Push payload to channel group  branch_{branch_id}  via Redis
-         → connected employees receive an instant WebSocket popup
+         - connected employees receive an instant WebSocket popup
     """
     try:
         from .models import Order
 
-        order = Order.objects.select_related(
-            "customer", "car", "branch"
-        ).prefetch_related("items").get(id=order_id)
+        order = (
+            Order.objects.select_related("customer", "car", "branch")
+            .prefetch_related("items")
+            .get(id=order_id)
+        )
 
-        # ── 1. DB update ────────────────────────────────────────────────
+        # --- 1. DB update ------------------------------------------------------------------------------------
         if order.user_arrived:
             # Idempotent — already marked, still push in case WS missed it
             _push_arrival(order)
             return {"status": "already_arrived", "order_id": order_id}
 
         update_fields = ["user_arrived", "user_arrived_at", "updated_at"]
-        order.user_arrived    = True
+        order.user_arrived = True
         order.user_arrived_at = timezone.now()
 
         if latitude is not None:
@@ -39,12 +41,12 @@ def mark_user_arrived(self, order_id: str, latitude=None, longitude=None):
 
         order.save(update_fields=update_fields)
 
-        # ── 2. WebSocket push ───────────────────────────────────────────
+        # --- 2. WebSocket push ------------------------------------------------------------------------------------
         _push_arrival(order)
 
         return {
-            "status":     "arrived",
-            "order_id":   order_id,
+            "status": "arrived",
+            "order_id": order_id,
             "arrived_at": str(order.user_arrived_at),
         }
 
@@ -52,9 +54,8 @@ def mark_user_arrived(self, order_id: str, latitude=None, longitude=None):
         raise self.retry(exc=exc)
 
 
-# ─────────────────────────────────────────────
-#  PRIVATE HELPER
-# ─────────────────────────────────────────────
+# --- PRIVATE HELPER --------------------------------------------------------------------------------------
+
 
 def _push_arrival(order):
     """
@@ -71,11 +72,11 @@ def _push_arrival(order):
 
     group_name = f"branch_{order.branch_id}"
 
-    customer   = order.customer
-    car        = order.car
+    customer = order.customer
+    car = order.car
     items_snap = [
         {
-            "name":     item.name,
+            "name": item.name,
             "quantity": item.quantity,
             "subtotal": str(item.subtotal),
         }
@@ -85,24 +86,24 @@ def _push_arrival(order):
     payload = {
         # Channels routing key — maps to  user_arrived()  method in consumer
         "type": "user_arrived",
-
         # Order info
-        "order_id":     str(order.id),
+        "order_id": str(order.id),
         "order_number": order.order_number,
-        "items":        items_snap,
-
+        "items": items_snap,
         # Customer info
         "customer_name": customer.full_name if customer else "",
-
         # Car info
-        "car": {
-            "model":        car.car_model    if car else "",
-            "plate_number": car.plate_number if car else "",
-            "color":        car.color        if car else "",
-        } if car else None,
-
+        "car": (
+            {
+                "model": car.car_model if car else "",
+                "plate_number": car.plate_number if car else "",
+                "color": car.color if car else "",
+            }
+            if car
+            else None
+        ),
         # Timing
-        "arrived_at":  str(order.user_arrived_at),
+        "arrived_at": str(order.user_arrived_at),
         "pickup_time": order.pickup_time,
     }
 

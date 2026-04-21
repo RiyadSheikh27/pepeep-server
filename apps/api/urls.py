@@ -178,36 +178,36 @@ restaurant_urlpatterns = [
     
 checkout_urlpatterns = [
  
-    # ── Cars ──────────────────────────────────────────────────────────────
+    # --- Cars ------------------------------------------------------------------------------------
     path("user/cars/",        CarListCreateView.as_view()),
     path("user/cars/<uuid:pk>/", CarDetailView.as_view()),
  
-    # ── Cart ──────────────────────────────────────────────────────────────
+    # --- Cart ------------------------------------------------------------------------------------
     path("cart/",               CartView.as_view()),
     path("cart/items/<uuid:pk>/", CartItemView.as_view()),
  
-    # ── Checkout ──────────────────────────────────────────────────────────
+    # --- Checkout ------------------------------------------------------------------------------------
     path("checkout/initiate/",  CheckoutInitView.as_view()),    # Step 1 — get intent / summary
     path("checkout/confirm/",   ConfirmOrderView.as_view()),    # Step 2 — create order
  
-    # ── Orders ────────────────────────────────────────────────────────────
+    # --- Orders ------------------------------------------------------------------------------------
     path("orders/",                           OrderListView.as_view()),
     path("orders/<uuid:order_id>/",           OrderDetailView.as_view()),
  
-    # ── Customer actions on an order ──────────────────────────────────────
+    # --- Customer actions on an order ------------------------------------------------------------------------------------
     path("orders/<uuid:order_id>/arrived/",          MarkArrivedView.as_view()),
     path("orders/<uuid:order_id>/confirm-delivery/", DeliverManualView.as_view()),
     path("orders/<uuid:order_id>/qr/",               OrderQRView.as_view()),
     path("orders/<uuid:order_id>/feedback/",         FeedbackView.as_view()),
     path("orders/<uuid:order_id>/cancel/",           CancelOrderView.as_view()),
  
-    # ── Employee / staff actions ──────────────────────────────────────────
+    # --- Employee / staff actions ------------------------------------------------------------------------------------
     path("staff/orders/<uuid:order_id>/receive-cash/",    ReceiveCashView.as_view()),
     path("staff/orders/<uuid:order_id>/accept/",          AcceptOrderView.as_view()),
     path("staff/orders/<uuid:order_id>/update-status/",   UpdateOrderStatusView.as_view()),
     path("staff/orders/deliver-qr/",                      DeliverByQRView.as_view()),   # no order_id — uses qr_token in body
  
-    # ── ETA / Distance (staff view) ───────────────────────────────────────
+    # --- ETA / Distance (staff view) ------------------------------------------------------------------------------------
     path("staff/orders/<uuid:order_id>/eta/", OrderETAView.as_view()),
 ]
  
