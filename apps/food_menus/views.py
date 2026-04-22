@@ -159,7 +159,7 @@ class MenuCategoryDetailView(APIView):
         if err:
             return err
         try:
-            #  fetch existing instance so validate_name can exclude it
+            # fetch existing instance so validate_name can exclude it
             existing = MenuCategoryService.get_category_detail(branch, category_id)
         except MenuNotFound as e:
             return _menu_handle(e)

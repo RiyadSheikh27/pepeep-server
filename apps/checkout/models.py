@@ -269,3 +269,189 @@ class Feedback(TimeStampedModel):
 
     def __str__(self):
         return f"{self.order.order_number} — {self.stars}★"
+
+
+# --- COMISSION SETTINGS ---------------------------------------------------------------------------
+
+
+class CommissionSettings(TimeStampedModel):
+    percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    percentage_active = models.BooleanField(default=False)
+    fixed_sar = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    fixed_active = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "commission_settings"
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(id=1)
+        return obj
+
+    def calculate(self, subtotal):
+        from decimal import Decimal
+
+        total = Decimal("0")
+        if self.percentage_active and self.percentage:
+            total += subtotal * (self.percentage / Decimal("100"))
+        if self.fixed_active and self.fixed_sar:
+            total += self.fixed_sar
+        return total.quantize(Decimal("0.01"))
+
+    def __str__(self):
+        return f"Commission: {self.percentage}% + {self.fixed_sar} SAR"
+
+
+class RestaurantCommission(TimeStampedModel):
+    restaurant = models.OneToOneField(
+        "restaurants.Restaurant", on_delete=models.CASCADE, related_name="commission"
+    )
+    percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    percentage_active = models.BooleanField(default=True)
+    fixed_sar = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    fixed_active = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "restaurant_commissions"
+
+    def calculate(self, subtotal):
+        from decimal import Decimal
+
+        total = Decimal("0")
+        if self.percentage_active and self.percentage:
+            total += subtotal * (self.percentage / Decimal("100"))
+        if self.fixed_active and self.fixed_sar:
+            total += self.fixed_sar
+        return total.quantize(Decimal("0.01"))
+
+    def __str__(self):
+        return f"{self.restaurant.brand_name}: {self.percentage}%"
+
+
+# --- OWNER WALLET SETTINGS ---------------------------------------------------------------------------
+class OwnerWallet(TimeStampedModel):
+    owner = models.OneToOneField(
+        "authentication.User", on_delete=models.CASCADE, related_name="wallet"
+    )
+    balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        db_table = "owner_wallets"
+
+    def __str__(self):
+        return f"{self.owner} — {self.balance} SAR"
+
+
+# --- COMMISSION AND PAYOUT TRANSACTIONS ---------------------------------------------------------------------------
+
+
+class CommissionTransaction(TimeStampedModel):
+
+    class Status(models.TextChoices):
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+        PENDING = "pending", "Pending"
+
+    restaurant = models.ForeignKey(
+        "restaurants.Restaurant",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="commission_transactions",
+    )
+    order = models.OneToOneField(
+        "checkout.Order",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="commission_transaction",
+    )
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2)
+    commission_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.COMPLETED
+    )
+
+    class Meta:
+        db_table = "commission_transactions"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"TXN | {self.restaurant} | {self.commission_amount} SAR"
+
+
+class PayoutRequest(TimeStampedModel):
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        COMPLETED = "completed", "Completed"
+        REJECTED = "rejected", "Rejected"
+
+    owner = models.ForeignKey(
+        "authentication.User", on_delete=models.CASCADE, related_name="payout_requests"
+    )
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    bank_name = models.CharField(max_length=100)
+    account_name = models.CharField(max_length=200)
+    account_number = models.CharField(max_length=50)
+    note = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.PENDING
+    )
+    rejection_reason = models.TextField(blank=True, default="")
+    actioned_by = models.ForeignKey(
+        "authentication.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="actioned_payouts",
+    )
+    actioned_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "payout_requests"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"PO | {self.owner} | {self.amount} SAR | {self.status}"
+
+
+# --- SUPPORT TICKETS ---------------------------------------------------------------------------
+
+
+class SupportTicket(TimeStampedModel):
+
+    class Status(models.TextChoices):
+        OPEN = "open", "Open"
+        CLOSED = "closed", "Closed"
+
+    customer = models.ForeignKey(
+        "authentication.User", on_delete=models.CASCADE, related_name="support_tickets"
+    )
+    order = models.ForeignKey(
+        "checkout.Order",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="support_tickets",
+    )
+    full_name = models.CharField(max_length=150)
+    email = models.EmailField()
+    description = models.TextField()
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.OPEN
+    )
+    admin_reply = models.TextField(blank=True, default="")
+    replied_by = models.ForeignKey(
+        "authentication.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ticket_replies",
+    )
+    replied_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "support_tickets"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Ticket-{self.id} | {self.customer} | {self.status}"

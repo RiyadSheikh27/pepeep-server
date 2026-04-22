@@ -1,6 +1,3 @@
-"""
-Middleware for normalizing and fixing content-type headers in requests.
-"""
 class NormalizeContentTypeMiddleware:
     """
     Middleware that normalizes Content-Type headers for API requests.

@@ -1,6 +1,3 @@
-"""
-Custom serializer fields for the application.
-"""
 import os
 from rest_framework import serializers
 from django.conf import settings
