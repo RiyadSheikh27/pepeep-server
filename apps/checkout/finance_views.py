@@ -11,21 +11,33 @@ from apps.authentication.permissions import IsOwner, IsAdmin, IsCustomer
 from apps.restaurants.models import Restaurant
 
 from .models import (
-    Order, Payment,
-    CommissionSettings, RestaurantCommission, OwnerWallet,
-    CommissionTransaction, PayoutRequest, SupportTicket,
+    Order,
+    Payment,
+    CommissionSettings,
+    RestaurantCommission,
+    OwnerWallet,
+    CommissionTransaction,
+    PayoutRequest,
+    SupportTicket,
 )
 from .finance_serializers import (
     CommissionSettingsSerializer,
-    CustomRateWriteSerializer, CustomRateListSerializer,
+    CustomRateWriteSerializer,
+    CustomRateListSerializer,
     CommissionTransactionSerializer,
-    PayoutRequestSerializer, PayoutActionSerializer,
-    SupportTicketSerializer, SupportTicketCreateSerializer, SupportTicketReplySerializer,
-    AdminDashboardSerializer, OwnerDashboardSerializer, OwnerWalletStatsSerializer,
+    PayoutRequestSerializer,
+    PayoutActionSerializer,
+    SupportTicketSerializer,
+    SupportTicketCreateSerializer,
+    SupportTicketReplySerializer,
+    AdminDashboardSerializer,
+    OwnerDashboardSerializer,
+    OwnerWalletStatsSerializer,
 )
 
 
 # --- SHARED HELPER — apply commission on payment -------------------------------------------------------------------------------------------------------
+
 
 def _apply_commission(order: Order):
     """
@@ -44,7 +56,7 @@ def _apply_commission(order: Order):
         rate = CommissionSettings.get()  # global default
 
     commission = rate.calculate(order.subtotal)
-    wallet, _  = OwnerWallet.objects.get_or_create(owner=restaurant.owner)
+    wallet, _ = OwnerWallet.objects.get_or_create(owner=restaurant.owner)
 
     with transaction.atomic():
         wallet.balance -= commission
@@ -55,21 +67,26 @@ def _apply_commission(order: Order):
         CommissionTransaction.objects.get_or_create(
             order=order,
             defaults={
-                "restaurant":        restaurant,
-                "subtotal":          order.subtotal,
+                "restaurant": restaurant,
+                "subtotal": order.subtotal,
                 "commission_amount": commission,
-                "status":            CommissionTransaction.Status.COMPLETED,
+                "status": CommissionTransaction.Status.COMPLETED,
             },
         )
 
 
 # --- PRIVATE HELPERS -------------------------------------------------------------------------------------------------------
 
+
 def _order_stats(qs, today, yesterday):
-    t_count   = qs.filter(created_at__date=today).count()
-    y_count   = qs.filter(created_at__date=yesterday).count()
-    t_revenue = qs.filter(created_at__date=today).aggregate(r=Sum("subtotal"))["r"] or Decimal("0")
-    y_revenue = qs.filter(created_at__date=yesterday).aggregate(r=Sum("subtotal"))["r"] or Decimal("0")
+    t_count = qs.filter(created_at__date=today).count()
+    y_count = qs.filter(created_at__date=yesterday).count()
+    t_revenue = qs.filter(created_at__date=today).aggregate(r=Sum("subtotal"))[
+        "r"
+    ] or Decimal("0")
+    y_revenue = qs.filter(created_at__date=yesterday).aggregate(r=Sum("subtotal"))[
+        "r"
+    ] or Decimal("0")
 
     def pct(new, old):
         if old == 0:
@@ -77,9 +94,9 @@ def _order_stats(qs, today, yesterday):
         return round(float((new - old) / old * 100), 1)
 
     return {
-        "today_orders":       t_count,
-        "order_change_pct":   pct(t_count, y_count),
-        "today_revenue":      t_revenue,
+        "today_orders": t_count,
+        "order_change_pct": pct(t_count, y_count),
+        "today_revenue": t_revenue,
         "revenue_change_pct": pct(t_revenue, y_revenue),
     }
 
@@ -87,10 +104,12 @@ def _order_stats(qs, today, yesterday):
 def _seven_day_trend(qs, field="subtotal"):
     return [
         {
-            "day":   (timezone.now() - timedelta(days=i)).strftime("%a"),
+            "day": (timezone.now() - timedelta(days=i)).strftime("%a"),
             "value": float(
-                qs.filter(created_at__date=(timezone.now() - timedelta(days=i)).date())
-                  .aggregate(v=Sum(field))["v"] or 0
+                qs.filter(
+                    created_at__date=(timezone.now() - timedelta(days=i)).date()
+                ).aggregate(v=Sum(field))["v"]
+                or 0
             ),
         }
         for i in range(6, -1, -1)
@@ -99,40 +118,53 @@ def _seven_day_trend(qs, field="subtotal"):
 
 def _paginate(request, qs, serializer_class):
     try:
-        page      = max(1, int(request.query_params.get("page", 1)))
+        page = max(1, int(request.query_params.get("page", 1)))
         page_size = min(100, max(1, int(request.query_params.get("page_size", 20))))
     except (ValueError, TypeError):
         page, page_size = 1, 20
     total = qs.count()
     start = (page - 1) * page_size
     return APIResponse.success(
-        data=serializer_class(qs[start:start + page_size], many=True).data,
-        meta={"total": total, "page": page, "page_size": page_size,
-              "pages": max(1, -(-total // page_size))},
+        data=serializer_class(qs[start : start + page_size], many=True).data,
+        meta={
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "pages": max(1, -(-total // page_size)),
+        },
     )
 
 
 # --- ADMIN DASHBOARD -------------------------------------------------------------------------------------------------------
 
+
 class AdminDashboardView(APIView):
     """GET /api/v1/admin/dashboard/"""
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        today     = timezone.now().date()
+        today = timezone.now().date()
         yesterday = today - timedelta(days=1)
         delivered = Order.objects.filter(status=Order.Status.DELIVERED)
-        stats     = _order_stats(delivered, today, yesterday)
+        stats = _order_stats(delivered, today, yesterday)
 
         avg_time = None
-        timed    = list(Order.objects.filter(
-            status=Order.Status.DELIVERED,
-            preparing_at__isnull=False,
-            delivered_at__isnull=False,
-        )[:200])
+        timed = list(
+            Order.objects.filter(
+                status=Order.Status.DELIVERED,
+                preparing_at__isnull=False,
+                delivered_at__isnull=False,
+            )[:200]
+        )
         if timed:
             avg_time = round(
-                sum((o.delivered_at - o.preparing_at).total_seconds() / 60 for o in timed) / len(timed), 1
+                sum(
+                    (o.delivered_at - o.preparing_at).total_seconds() / 60
+                    for o in timed
+                )
+                / len(timed),
+                1,
             )
 
         total_commission = CommissionTransaction.objects.filter(
@@ -144,14 +176,14 @@ class AdminDashboardView(APIView):
         data = {
             **stats,
             "avg_delivery_minutes": avg_time,
-            "commission_balance":   total_commission,
-            "revenue_trend":        _seven_day_trend(delivered),
+            "commission_balance": total_commission,
+            "revenue_trend": _seven_day_trend(delivered),
             "recent_orders": [
                 {
                     "order_number": o.order_number,
-                    "customer":     o.customer.full_name if o.customer else "",
-                    "total":        str(o.total),
-                    "status":       o.status,
+                    "customer": o.customer.full_name if o.customer else "",
+                    "total": str(o.total),
+                    "status": o.status,
                 }
                 for o in recent
             ],
@@ -164,12 +196,14 @@ class AdminDashboardView(APIView):
 
 # --- OWNER DASHBOARD -------------------------------------------------------------------------------------------------------
 
+
 class OwnerDashboardView(APIView):
     """GET /api/v1/owner/dashboard/"""
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def get(self, request):
-        today     = timezone.now().date()
+        today = timezone.now().date()
         yesterday = today - timedelta(days=1)
 
         restaurant = Restaurant.objects.filter(owner=request.user).first()
@@ -177,19 +211,24 @@ class OwnerDashboardView(APIView):
             return APIResponse.error(message="Restaurant not found.", status_code=404)
 
         orders = Order.objects.filter(branch__restaurant=restaurant)
-        stats  = _order_stats(orders, today, yesterday)
+        stats = _order_stats(orders, today, yesterday)
 
         data = {
             **stats,
-            "active_branches":   restaurant.branches.filter(is_active=True).count(),
+            "active_branches": restaurant.branches.filter(is_active=True).count(),
             "pending_approvals": restaurant.branches.filter(is_active=False).count(),
-            "total_customers":   orders.filter(customer__isnull=False).values("customer").distinct().count(),
-            "pending_tickets":   SupportTicket.objects.filter(
+            "total_customers": orders.filter(customer__isnull=False)
+            .values("customer")
+            .distinct()
+            .count(),
+            "pending_tickets": SupportTicket.objects.filter(
                 order__branch__restaurant=restaurant,
                 status=SupportTicket.Status.OPEN,
             ).count(),
-            "order_overview":  _seven_day_trend(orders),
-            "revenue_trend":   _seven_day_trend(orders.filter(status=Order.Status.DELIVERED)),
+            "order_overview": _seven_day_trend(orders),
+            "revenue_trend": _seven_day_trend(
+                orders.filter(status=Order.Status.DELIVERED)
+            ),
         }
 
         s = OwnerDashboardSerializer(data=data)
@@ -199,15 +238,17 @@ class OwnerDashboardView(APIView):
 
 # --- OWNER WALLET -------------------------------------------------------------------------------------------------------
 
+
 class OwnerWalletView(APIView):
     """GET /api/v1/owner/wallet/"""
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def get(self, request):
-        today          = timezone.now().date()
-        this_month     = today.replace(day=1)
+        today = timezone.now().date()
+        this_month = today.replace(day=1)
         last_month_end = this_month - timedelta(days=1)
-        last_month     = last_month_end.replace(day=1)
+        last_month = last_month_end.replace(day=1)
 
         restaurant = Restaurant.objects.filter(owner=request.user).first()
         if not restaurant:
@@ -216,10 +257,10 @@ class OwnerWalletView(APIView):
         orders = Order.objects.filter(branch__restaurant=restaurant)
 
         def month_agg(start, end):
-            qs    = orders.filter(created_at__date__gte=start, created_at__date__lte=end)
+            qs = orders.filter(created_at__date__gte=start, created_at__date__lte=end)
             sales = qs.aggregate(s=Sum("subtotal"))["s"] or Decimal("0")
             count = qs.count()
-            avg   = qs.aggregate(a=Avg("subtotal"))["a"] or Decimal("0")
+            avg = qs.aggregate(a=Avg("subtotal"))["a"] or Decimal("0")
             return sales, count, avg
 
         this_sales, this_count, this_avg = month_agg(this_month, today)
@@ -233,15 +274,17 @@ class OwnerWalletView(APIView):
         wallet, _ = OwnerWallet.objects.get_or_create(owner=request.user)
 
         data = {
-            "wallet_balance":       wallet.balance,
-            "total_sales":          this_sales,
-            "sales_change_pct":     pct(this_sales, last_sales),
-            "total_orders":         this_count,
-            "orders_change_pct":    pct(this_count, last_count),
-            "avg_order_value":      this_avg.quantize(Decimal("0.01")),
+            "wallet_balance": wallet.balance,
+            "total_sales": this_sales,
+            "sales_change_pct": pct(this_sales, last_sales),
+            "total_orders": this_count,
+            "orders_change_pct": pct(this_count, last_count),
+            "avg_order_value": this_avg.quantize(Decimal("0.01")),
             "avg_order_change_pct": pct(this_avg, last_avg),
-            "revenue_trend":        _seven_day_trend(orders.filter(status=Order.Status.DELIVERED)),
-            "order_volume":         _seven_day_trend(orders),
+            "revenue_trend": _seven_day_trend(
+                orders.filter(status=Order.Status.DELIVERED)
+            ),
+            "order_volume": _seven_day_trend(orders),
         }
 
         s = OwnerWalletStatsSerializer(data=data)
@@ -251,11 +294,13 @@ class OwnerWalletView(APIView):
 
 # --- PAYOUT -------------------------------------------------------------------------------------------------------
 
+
 class PayoutRequestView(APIView):
     """
     GET  /api/v1/owner/payout/
     POST /api/v1/owner/payout/
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def get(self, request):
@@ -287,6 +332,7 @@ class PayoutRequestView(APIView):
 
 class AdminPayoutListView(APIView):
     """GET /api/v1/admin/payouts/"""
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
@@ -298,6 +344,7 @@ class AdminPayoutListView(APIView):
 
 class AdminPayoutActionView(APIView):
     """POST /api/v1/admin/payouts/{pk}/action/"""
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     @transaction.atomic
@@ -305,10 +352,14 @@ class AdminPayoutActionView(APIView):
         try:
             payout = PayoutRequest.objects.select_related("owner").get(id=pk)
         except PayoutRequest.DoesNotExist:
-            return APIResponse.error(message="Payout request not found.", status_code=404)
+            return APIResponse.error(
+                message="Payout request not found.", status_code=404
+            )
 
         if payout.status != PayoutRequest.Status.PENDING:
-            return APIResponse.error(message="Payout already actioned.", status_code=400)
+            return APIResponse.error(
+                message="Payout already actioned.", status_code=400
+            )
 
         s = PayoutActionSerializer(data=request.data)
         if not s.is_valid():
@@ -321,24 +372,40 @@ class AdminPayoutActionView(APIView):
             wallet.save(update_fields=["balance", "updated_at"])
             payout.status = PayoutRequest.Status.COMPLETED
         else:
-            payout.status           = PayoutRequest.Status.REJECTED
+            payout.status = PayoutRequest.Status.REJECTED
             payout.rejection_reason = d.get("reason", "")
 
         payout.actioned_by = request.user
         payout.actioned_at = timezone.now()
-        payout.save(update_fields=["status", "rejection_reason", "actioned_by", "actioned_at", "updated_at"])
+        payout.save(
+            update_fields=[
+                "status",
+                "rejection_reason",
+                "actioned_by",
+                "actioned_at",
+                "updated_at",
+            ]
+        )
 
-        msg = "Payout accepted." if payout.status == PayoutRequest.Status.COMPLETED else "Payout rejected."
-        return APIResponse.success(message=msg, data=PayoutRequestSerializer(payout).data)
+        msg = (
+            "Payout accepted."
+            if payout.status == PayoutRequest.Status.COMPLETED
+            else "Payout rejected."
+        )
+        return APIResponse.success(
+            message=msg, data=PayoutRequestSerializer(payout).data
+        )
 
 
 # --- COMMISSION SETTINGS -------------------------------------------------------------------------------------------------------
+
 
 class AdminCommissionSettingsView(APIView):
     """
     GET   /api/v1/admin/commission/settings/
     PATCH /api/v1/admin/commission/settings/
     """
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
@@ -347,7 +414,9 @@ class AdminCommissionSettingsView(APIView):
         )
 
     def patch(self, request):
-        s = CommissionSettingsSerializer(CommissionSettings.get(), data=request.data, partial=True)
+        s = CommissionSettingsSerializer(
+            CommissionSettings.get(), data=request.data, partial=True
+        )
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         s.save()
@@ -359,31 +428,38 @@ class AdminCommissionCustomRatesView(APIView):
     GET  /api/v1/admin/commission/custom-rates/
     POST /api/v1/admin/commission/custom-rates/
     """
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        restaurants = Restaurant.objects.select_related("commission").order_by("brand_name")
-        global_s    = CommissionSettings.get()
+        restaurants = Restaurant.objects.select_related("commission").order_by(
+            "brand_name"
+        )
+        global_s = CommissionSettings.get()
         if request.query_params.get("search"):
-            restaurants = restaurants.filter(brand_name__icontains=request.query_params["search"])
+            restaurants = restaurants.filter(
+                brand_name__icontains=request.query_params["search"]
+            )
 
         rows = []
         for r in restaurants:
             try:
-                c         = r.commission
+                c = r.commission
                 is_custom = True
                 pct, fixed = c.percentage, c.fixed_sar
             except RestaurantCommission.DoesNotExist:
                 is_custom = False
                 pct, fixed = global_s.percentage, global_s.fixed_sar
 
-            rows.append({
-                "restaurant_id":   r.id,
-                "restaurant_name": r.brand_name,
-                "percentage":      pct,
-                "fixed_sar":       fixed,
-                "is_custom":       is_custom,
-            })
+            rows.append(
+                {
+                    "restaurant_id": r.id,
+                    "restaurant_name": r.brand_name,
+                    "percentage": pct,
+                    "fixed_sar": fixed,
+                    "is_custom": is_custom,
+                }
+            )
 
         s = CustomRateListSerializer(rows, many=True)
         return APIResponse.success(data=s.data, meta={"count": len(rows)})
@@ -406,6 +482,7 @@ class AdminCommissionCustomRatesView(APIView):
         obj.save()
 
         from .finance_serializers import RestaurantCommissionSerializer
+
         return APIResponse.success(
             message="Custom rate saved.",
             data=RestaurantCommissionSerializer(obj).data,
@@ -414,6 +491,7 @@ class AdminCommissionCustomRatesView(APIView):
 
 class AdminCommissionTransactionsView(APIView):
     """GET /api/v1/admin/commission/transactions/"""
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
@@ -425,11 +503,13 @@ class AdminCommissionTransactionsView(APIView):
 
 # --- SUPPORT TICKETS -------------------------------------------------------------------------------------------------------
 
+
 class SupportTicketView(APIView):
     """
     POST /api/v1/support/tickets/
     GET  /api/v1/support/tickets/
     """
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -448,7 +528,9 @@ class SupportTicketView(APIView):
 
     def post(self, request):
         if request.user.role != "customer":
-            return APIResponse.error(message="Only customers can submit tickets.", status_code=403)
+            return APIResponse.error(
+                message="Only customers can submit tickets.", status_code=403
+            )
 
         s = SupportTicketCreateSerializer(data=request.data)
         if not s.is_valid():
@@ -457,7 +539,9 @@ class SupportTicketView(APIView):
 
         order = None
         if d.get("order_id"):
-            order = Order.objects.filter(id=d["order_id"], customer=request.user).first()
+            order = Order.objects.filter(
+                id=d["order_id"], customer=request.user
+            ).first()
             if not order:
                 return APIResponse.error(message="Order not found.", status_code=404)
 
@@ -480,11 +564,16 @@ class SupportTicketDetailView(APIView):
     GET   /api/v1/support/tickets/{pk}/
     PATCH /api/v1/support/tickets/{pk}/
     """
+
     permission_classes = [IsAuthenticated]
 
     def _get_ticket(self, request, pk):
         if request.user.role == "admin":
-            return SupportTicket.objects.filter(id=pk).select_related("customer", "order").first()
+            return (
+                SupportTicket.objects.filter(id=pk)
+                .select_related("customer", "order")
+                .first()
+            )
         if request.user.role == "customer":
             return SupportTicket.objects.filter(id=pk, customer=request.user).first()
         return None
@@ -497,7 +586,9 @@ class SupportTicketDetailView(APIView):
 
     def patch(self, request, pk):
         if request.user.role != "admin":
-            return APIResponse.error(message="Only admins can update tickets.", status_code=403)
+            return APIResponse.error(
+                message="Only admins can update tickets.", status_code=403
+            )
 
         ticket = SupportTicket.objects.filter(id=pk).first()
         if not ticket:
@@ -511,8 +602,8 @@ class SupportTicketDetailView(APIView):
         updated = []
         if d.get("admin_reply"):
             ticket.admin_reply = d["admin_reply"]
-            ticket.replied_by  = request.user
-            ticket.replied_at  = timezone.now()
+            ticket.replied_by = request.user
+            ticket.replied_at = timezone.now()
             updated += ["admin_reply", "replied_by", "replied_at"]
         if d.get("status"):
             ticket.status = d["status"]
@@ -521,4 +612,6 @@ class SupportTicketDetailView(APIView):
         if updated:
             ticket.save(update_fields=updated + ["updated_at"])
 
-        return APIResponse.success(message="Ticket updated.", data=SupportTicketSerializer(ticket).data)
+        return APIResponse.success(
+            message="Ticket updated.", data=SupportTicketSerializer(ticket).data
+        )

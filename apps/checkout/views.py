@@ -529,32 +529,35 @@ class ConfirmOrderView(APIView):
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         d = s.validated_data
- 
+
         # ── Branch ──────────────────────────────────────────────────────────
-        branch = Branch.objects.filter(id=d["branch_id"], is_active=True).select_related("restaurant").first()
+        branch = (
+            Branch.objects.filter(id=d["branch_id"], is_active=True)
+            .select_related("restaurant")
+            .first()
+        )
         if not branch:
             return APIResponse.error(message="Branch not found.", status_code=404)
- 
+
         # ── Cart ────────────────────────────────────────────────────────────
         cart = (
-            Cart.objects
-            .filter(customer=request.user, branch=branch)
+            Cart.objects.filter(customer=request.user, branch=branch)
             .prefetch_related("items__menu_item")
             .first()
         )
         if not cart or not cart.items.exists():
             return APIResponse.error(message="Your cart is empty.", status_code=400)
- 
+
         subtotal = cart.total
         if subtotal < branch.min_order:
             return APIResponse.error(
                 message=f"Minimum order is {branch.min_order} SAR. Your cart is {subtotal} SAR.",
                 status_code=400,
             )
- 
-        vat   = (subtotal + SERVICE_FEE) * VAT_RATE
+
+        vat = (subtotal + SERVICE_FEE) * VAT_RATE
         total = (subtotal + SERVICE_FEE + vat).quantize(Decimal("0.01"))
- 
+
         # ── Car ─────────────────────────────────────────────────────────────
         car = None
         if d.get("car_id"):
@@ -568,16 +571,17 @@ class ConfirmOrderView(APIView):
                 plate_number=d["plate_number"],
                 color=d["car_color"].upper(),
             )
- 
+
         # ── Payment ─────────────────────────────────────────────────────────
         method = d["payment_method"]
- 
+
         if method == Payment.Method.STRIPE:
             try:
                 import stripe
                 from django.conf import settings
+
                 stripe.api_key = settings.STRIPE_SECRET_KEY
- 
+
                 intent = stripe.PaymentIntent.retrieve(d["stripe_intent_id"])
                 if intent["status"] != "succeeded":
                     return APIResponse.error(
@@ -603,7 +607,7 @@ class ConfirmOrderView(APIView):
                 status=Payment.Status.PENDING,
                 amount=total,
             )
- 
+
         # ── Order ────────────────────────────────────────────────────────────
         order = Order.objects.create(
             customer=request.user,
@@ -618,7 +622,7 @@ class ConfirmOrderView(APIView):
             total=total,
             qr_token=secrets.token_hex(32),
         )
- 
+
         # ── Order Items (snapshot) ───────────────────────────────────────────
         items_data, _ = _build_order_snapshot(cart)
         for item_data in items_data:
@@ -631,14 +635,14 @@ class ConfirmOrderView(APIView):
                 quantity=item_data["quantity"],
                 selected_options=item_data["selected_options"],
             )
- 
+
         # ── Commission (Stripe only — payment already confirmed) ─────────────
         if method == Payment.Method.STRIPE:
             _apply_commission(order)
- 
+
         # ── Clear Cart ───────────────────────────────────────────────────────
         cart.delete()
- 
+
         return APIResponse.success(
             message="Order placed successfully.",
             data=OrderSerializer(order).data,
@@ -750,30 +754,41 @@ class ReceiveCashView(APIView):
             return APIResponse.error(message="Order not found.", status_code=404)
         if not _can_manage(request.user, order):
             return APIResponse.error(message="Unauthorized.", status_code=403)
- 
+
         payment = order.payment
         if not payment or payment.method != Payment.Method.CASH:
-            return APIResponse.error(message="This order is not a cash order.", status_code=400)
+            return APIResponse.error(
+                message="This order is not a cash order.", status_code=400
+            )
         if payment.status == Payment.Status.PAID:
-            return APIResponse.error(message="Cash already marked as received.", status_code=400)
- 
+            return APIResponse.error(
+                message="Cash already marked as received.", status_code=400
+            )
+
         s = CashReceiveSerializer(data=request.data)
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
- 
-        payment.status           = Payment.Status.PAID
+
+        payment.status = Payment.Status.PAID
         payment.cash_received_by = request.user
         payment.cash_received_at = timezone.now()
-        payment.save(update_fields=["status", "cash_received_by", "cash_received_at", "updated_at"])
- 
+        payment.save(
+            update_fields=[
+                "status",
+                "cash_received_by",
+                "cash_received_at",
+                "updated_at",
+            ]
+        )
+
         # ── Commission (Cash — deduct only, no wallet credit) ────────────────
         _apply_commission(order)
- 
+
         return APIResponse.success(
             message=f"Cash of {s.validated_data['amount_received']} SAR received.",
             data=OrderSerializer(order).data,
         )
- 
+
 
 # --- EMPLOYEE — ACCEPT ORDER ------------------------------------------------------------------------------------
 
