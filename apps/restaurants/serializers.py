@@ -280,3 +280,22 @@ class BranchSearchSerializer(serializers.ModelSerializer):
 
     def get_distance_km(self, obj):
         return getattr(obj, "distance", None)
+
+
+# --- Restaurant Bookmark Serializer ---------------------------------------------------------------
+
+
+class BookmarkSerializer(serializers.Serializer):
+    branch_id = serializers.UUIDField(source="branch.id")
+    branch_name = serializers.CharField(source="branch.name")
+    restaurant_name = serializers.CharField(source="branch.restaurant.brand_name")
+    logo = AbsoluteURLImageField(source="branch.restaurant.logo")
+    category_name = serializers.CharField(
+        source="branch.restaurant.category.name", default=None
+    )
+    city = serializers.CharField(source="branch.city")
+    full_address = serializers.CharField(source="branch.full_address")
+    min_order = serializers.DecimalField(
+        source="branch.min_order", max_digits=8, decimal_places=2
+    )
+    bookmarked_at = serializers.DateTimeField(source="created_at")

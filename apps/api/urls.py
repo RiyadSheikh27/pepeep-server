@@ -60,6 +60,7 @@ from apps.restaurants.views import (
     RestaurantCategoryListCreateView,
     RestaurantCategoryDetailView,
     RestaurantSearchView,
+    BookmarkView,
 )
 
 from apps.food_menus.views import (
@@ -121,6 +122,17 @@ from apps.checkout.finance_views import (
     # Support
     SupportTicketView,
     SupportTicketDetailView,
+)
+from apps.checkout.site_settings_views import (
+    CustomerWalletView,
+    AdminCustomerWalletView,
+    VisibilitySettingsView,
+    AdminManagerListCreateView,
+    AdminManagerDetailView,
+    ChangePasswordView,
+    AdminSetEmployeePasswordView,
+    AdminOwnerDetailFixedView,
+    AdminCustomerDetailFixedView,
 )
 
 auth_urlpatterns = [
@@ -231,12 +243,12 @@ menu_urlpatterns = [
 restaurant_urlpatterns = [
     # --- Restaurant Categories -------------------------------------------------------
     path("restaurants/categories/", RestaurantCategoryListCreateView.as_view()),
-    path(
-        "restaurants/categories/<uuid:category_id>/",
-        RestaurantCategoryDetailView.as_view(),
-    ),
+    path("restaurants/categories/<uuid:category_id>/", RestaurantCategoryDetailView.as_view()),
     # --- Restaurant Search -----------------------------------------------------------
     path("restaurants/search/", RestaurantSearchView.as_view()),
+    # --- Bookmarks -------------------------------------------------------------------
+    path("user/bookmarks/", BookmarkView.as_view()),
+    path("user/bookmarks/<uuid:restaurant_id>/", BookmarkView.as_view()),
 ]
 
 checkout_urlpatterns = [
@@ -292,10 +304,33 @@ finance_urlpatterns = [
     path("support/tickets/<uuid:pk>/", SupportTicketDetailView.as_view()),
 ]
 
+site_settings_urlpatterns = [
+    # ── Customer wallet ───────────────────────────────────────────────────────
+    path("user/wallet/", CustomerWalletView.as_view()),
+    # ── Admin — customer wallet adjustments ──────────────────────────────────
+    path("admin/customers/<uuid:pk>/wallet/", AdminCustomerWalletView.as_view()),
+    # ── Admin — visibility settings ───────────────────────────────────────────
+    path("admin/visibility/", VisibilitySettingsView.as_view()),
+    # ── Admin — managers ──────────────────────────────────────────────────────
+    path("admin/managers/", AdminManagerListCreateView.as_view()),
+    path("admin/managers/<uuid:pk>/", AdminManagerDetailView.as_view()),
+    # ── Change password ───────────────────────────────────────────────────────
+    path("owner/change-password/", ChangePasswordView.as_view()),
+    path("owner/staff/<uuid:pk>/set-password/", AdminSetEmployeePasswordView.as_view()),
+    # ── Fixed admin views (REPLACE existing routes in urlpatterns) ────────────
+    # Replace: path("admin/owners/<uuid:pk>/",    AdminOwnerDetailView.as_view()),
+    # With:
+    path("admin/owners/<uuid:pk>/", AdminOwnerDetailFixedView.as_view()),
+    # Replace: path("admin/customers/<uuid:pk>/", AdminCustomerDetailView.as_view()),
+    # With:
+    path("admin/customers/<uuid:pk>/", AdminCustomerDetailFixedView.as_view()),
+]
+
 urlpatterns = [
     *auth_urlpatterns,
     *restaurant_urlpatterns,
     *menu_urlpatterns,
     *checkout_urlpatterns,
     *finance_urlpatterns,
+    *site_settings_urlpatterns,
 ]

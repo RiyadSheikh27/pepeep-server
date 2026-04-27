@@ -11,30 +11,16 @@ log = logging.getLogger(__name__)
 # --- Utility Functions -----------------------------------------------------------------------
 
 
-def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """
-    Calculate distance between two coordinates using Haversine formula.
-    Returns distance in kilometers.
-    """
+def calculate_distance(lat1, lon1, lat2, lon2):
     if not all([lat1, lon1, lat2, lon2]):
         return None
-
-    R = 6371  # Earth's radius in kilometers
-    lat1, lon1, lat2, lon2 = map(
-        math.radians, [float(lat1), float(lon1), float(lat2), float(lon2)]
-    )
-
+    R = 6371.0
+    lat1, lon1, lat2, lon2 = map(math.radians, [float(lat1), float(lon1), float(lat2), float(lon2)])
     dlat = lat2 - lat1
     dlon = lon2 - lon1
-
-    a = (
-        math.sin(dlat / 2) ** 2
-        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-    )
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    distance = R * c
-
-    return round(distance, 2)
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return round(R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)), 2)
+ 
 
 
 # --- Exceptions --------------------------------------------------------------------------------
@@ -151,10 +137,9 @@ class RestaurantCategoryService:
 
 # --- Branch SearchService -----------------------------------------------------------------------
 
-
 class BranchSearchService:
     PAGE_SIZE = 10
-
+ 
     @staticmethod
     def search_branches(
         query: str = "",
@@ -163,55 +148,69 @@ class BranchSearchService:
         user_lat: float = None,
         user_lon: float = None,
         page: int = 1,
+        radius_km: float = None,
     ) -> tuple:
-        from .models import Branch
+        from apps.restaurants.models import Branch
         from apps.food_menus.models import MenuItem
-
-        base_qs = Branch.objects.filter(
-            is_active=True, restaurant__is_active=True
-        ).select_related("restaurant", "restaurant__category")
-
+ 
+        base_qs = (
+            Branch.objects
+            .filter(is_active=True, restaurant__is_active=True)
+            .select_related("restaurant", "restaurant__category")
+        )
+ 
+        # Text search — branch name, restaurant name, or food item name
         if query:
-            # Match branch name, restaurant name or menu item name
             food_branch_ids = (
-                MenuItem.objects.filter(name__icontains=query)
+                MenuItem.objects
+                .filter(name__icontains=query)
                 .values_list("branch_id", flat=True)
                 .distinct()
             )
             base_qs = base_qs.filter(
-                models.Q(name__icontains=query)
-                | models.Q(restaurant__brand_name__icontains=query)
-                | models.Q(id__in=food_branch_ids)
+                Q(name__icontains=query) |
+                Q(restaurant__brand_name__icontains=query) |
+                Q(id__in=food_branch_ids)
             )
-
+ 
+        # Filter by RESTAURANT category (not menu category)
         if category_id:
             base_qs = base_qs.filter(restaurant__category_id=category_id)
-
+ 
         if city:
             base_qs = base_qs.filter(city__icontains=city)
-
+ 
         branches = list(base_qs.order_by("-created_at"))
-
-        # Distance annotation + sort
+ 
+        # Distance annotation
         if user_lat is not None and user_lon is not None:
             for b in branches:
                 if b.latitude and b.longitude:
                     b.distance = calculate_distance(
-                        user_lat, user_lon, float(b.latitude), float(b.longitude)
+                        user_lat, user_lon,
+                        float(b.latitude), float(b.longitude),
                     )
                 else:
                     b.distance = None
+ 
+            # Apply radius filter only if radius_km is set
+            if radius_km is not None:
+                branches = [
+                    b for b in branches
+                    if b.distance is not None and b.distance <= radius_km
+                ]
+ 
             branches.sort(key=lambda x: (x.distance is None, x.distance or 0))
         else:
             for b in branches:
                 b.distance = None
-
+ 
         paginator = Paginator(branches, BranchSearchService.PAGE_SIZE)
         try:
             page_obj = paginator.page(page)
         except (PageNotAnInteger, EmptyPage):
             page_obj = paginator.page(1)
-
+ 
         return (
             page_obj.object_list,
             paginator.count,
@@ -220,3 +219,4 @@ class BranchSearchService:
             page_obj.has_next(),
             page_obj.has_previous(),
         )
+ 

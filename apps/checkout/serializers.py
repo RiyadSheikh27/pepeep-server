@@ -124,7 +124,7 @@ class ConfirmOrderSerializer(serializers.Serializer):
     """
 
     branch_id = serializers.UUIDField()
-    payment_method = serializers.ChoiceField(choices=Payment.Method.choices)
+    payment_method = serializers.ChoiceField(choices=[("stripe","Stripe"),("cash","Cash"),("wallet","Wallet")])
     # Required for Stripe flow — the intent id returned from Step 1
     stripe_intent_id = serializers.CharField(required=False, allow_blank=True)
     note = serializers.CharField(required=False, allow_blank=True, default="")

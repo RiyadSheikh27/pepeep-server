@@ -13,7 +13,9 @@ from .serializers import (
     RestaurantCategoryDetailSerializer,
     RestaurantCategoryWriteSerializer,
     BranchSearchSerializer,
+    BookmarkSerializer,
 )
+from apps.restaurants.models import RestaurantBookmark, Branch
 
 # --- Shared helper method -----------------------------------------------------------------------
 
@@ -144,20 +146,12 @@ class RestaurantCategoryDetailView(APIView):
 
 
 class RestaurantSearchView(APIView):
-    """
-    GET /restaurants/search/
-    Query params:
-      q           — branch name, restaurant name or food name
-      category_id — uuid of RestaurantCategory
-      city        — filter by city string
-      user_lat    — float, user's latitude
-      user_lon    — float, user's longitude
-      page        — page number (default 1)
-    """
-
     permission_classes = [IsAuthenticatedOrReadOnly]
 
     def get(self, request):
+        from apps.checkout.models import VisibilitySettings
+        from apps.restaurants.serializers import BranchSearchSerializer
+
         query = request.query_params.get("q", "")
         category_id = request.query_params.get("category_id", "")
         city = request.query_params.get("city", "")
@@ -182,6 +176,11 @@ class RestaurantSearchView(APIView):
             user_lat = None
             user_lon = None
 
+        # Apply global radius only when coordinates are provided
+        radius_km = None
+        if user_lat is not None and user_lon is not None:
+            radius_km = float(VisibilitySettings.get().radius_km)
+
         items, total_count, page_number, total_pages, has_next, has_previous = (
             BranchSearchService.search_branches(
                 query=query,
@@ -190,6 +189,7 @@ class RestaurantSearchView(APIView):
                 user_lat=user_lat,
                 user_lon=user_lon,
                 page=page,
+                radius_km=radius_km,
             )
         )
 
@@ -201,10 +201,43 @@ class RestaurantSearchView(APIView):
                 "total_pages": total_pages,
                 "has_next": has_next,
                 "has_previous": has_previous,
+                "radius_km": radius_km,
                 "user_location": (
                     {"latitude": user_lat, "longitude": user_lon}
-                    if user_lat is not None and user_lon is not None
+                    if user_lat is not None
                     else None
                 ),
             },
         )
+
+# --- Restaurant Bookmark Views -----------------------------------------------------------------------
+
+class BookmarkView(APIView):
+    """
+    GET    /api/v1/user/bookmarks/              — list bookmarked restaurants
+    POST   /api/v1/user/bookmarks/              — bookmark a restaurant
+    DELETE /api/v1/user/bookmarks/{restaurant_id}/ — remove bookmark
+    """
+    permission_classes = [IsAuthenticated]
+ 
+    def get(self, request):
+        bookmarks = RestaurantBookmark.objects.filter(customer=request.user).select_related(
+            "branch", "branch__restaurant", "branch__restaurant__category"
+        ).order_by("-created_at")
+        return APIResponse.success(data=BookmarkSerializer(bookmarks, many=True).data, meta={"count": bookmarks.count()})
+    
+    def post(self, request):
+        branch_id = request.data.get("branch_id")
+        if not branch_id:
+            return APIResponse.error(errors={"branch_id": ["This field is required."]})
+        branch = Branch.objects.filter(id=branch_id, is_active=True).first()
+        if not branch:
+            return APIResponse.error(message="Branch not found.", status_code=404)
+        _, created = RestaurantBookmark.objects.get_or_create(customer=request.user, branch=branch)
+        return APIResponse.success(message="Branch bookmarked." if created else "Already bookmarked.", status_code=201 if created else 200)
+    
+    def delete(self, request, restaurant_id):   # reuse param name — it's branch_id 
+        deleted, _ = RestaurantBookmark.objects.filter(customer=request.user, branch_id=restaurant_id).delete()
+        if not deleted:
+            return APIResponse.error(message="Bookmark not found.", status_code=404)
+        return APIResponse.success(message="Bookmark removed.")

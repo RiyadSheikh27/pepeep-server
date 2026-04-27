@@ -90,6 +90,7 @@ class Payment(TimeStampedModel):
     class Method(models.TextChoices):
         STRIPE = "stripe", "Stripe"
         CASH = "cash", "Cash"
+        WALLET = "wallet", "Wallet"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -447,8 +448,8 @@ class SupportTicket(TimeStampedModel):
         blank=True,
         related_name="ticket_replies",
     )
-    is_viewed   = models.BooleanField(default=False)
-    viewed_at   = models.DateTimeField(null=True, blank=True)
+    is_viewed = models.BooleanField(default=False)
+    viewed_at = models.DateTimeField(null=True, blank=True)
     replied_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -457,3 +458,112 @@ class SupportTicket(TimeStampedModel):
 
     def __str__(self):
         return f"Ticket-{self.id} | {self.customer} | {self.status}"
+
+
+#  --- CUSTOMER WALLET ---------------------------------------------------------------------------
+
+
+class CustomerWallet(TimeStampedModel):
+    """One wallet per customer. Used for wallet-pay orders."""
+
+    customer = models.OneToOneField(
+        "authentication.User",
+        on_delete=models.CASCADE,
+        related_name="customer_wallet",
+    )
+    balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        db_table = "customer_wallets"
+
+    def __str__(self):
+        return f"{self.customer} — {self.balance} SAR"
+
+
+class CustomerWalletTransaction(TimeStampedModel):
+    """Audit log for every wallet balance change."""
+
+    class TxType(models.TextChoices):
+        CREDIT = "credit", "Credit"
+        DEBIT = "debit", "Debit"
+        BONUS = "bonus", "Bonus"
+        ORDER_PAY = "order_pay", "Order Payment"
+        REFUND = "refund", "Refund"
+
+    wallet = models.ForeignKey(
+        CustomerWallet, on_delete=models.CASCADE, related_name="transactions"
+    )
+    tx_type = models.CharField(max_length=10, choices=TxType.choices)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    reason = models.TextField(blank=True, default="")
+    actioned_by = models.ForeignKey(
+        "authentication.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="wallet_adjustments",
+    )
+
+    class Meta:
+        db_table = "customer_wallet_transactions"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.tx_type} {self.amount} — {self.wallet.customer}"
+
+
+#  --- VISIBILITY SETTINGS  (global singleton) ---------------------------------------------------------------------------
+
+
+class VisibilitySettings(TimeStampedModel):
+    """Global platform settings. Only one row (id=1)."""
+
+    radius_km = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=10,
+        help_text="Search radius in km for branch discovery",
+    )
+
+    class Meta:
+        db_table = "visibility_settings"
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(id=1, defaults={"radius_km": 10})
+        return obj
+
+    def __str__(self):
+        return f"Visibility radius: {self.radius_km} km"
+
+
+#  --- ADMIN MANAGER ---------------------------------------------------------------------------
+
+
+class AdminManager(TimeStampedModel):
+    """Managers created by super admin. Linked to a User with role=admin."""
+
+    class AccessLevel(models.TextChoices):
+        LIMITED = "limited", "Limited Access"
+        FULL = "full", "Full Access"
+
+    user = models.OneToOneField(
+        "authentication.User",
+        on_delete=models.CASCADE,
+        related_name="manager_profile",
+    )
+    access_level = models.CharField(
+        max_length=10, choices=AccessLevel.choices, default=AccessLevel.LIMITED
+    )
+    created_by = models.ForeignKey(
+        "authentication.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="created_managers",
+    )
+
+    class Meta:
+        db_table = "admin_managers"
+
+    def __str__(self):
+        return f"{self.user.full_name} ({self.access_level})"

@@ -416,23 +416,18 @@ __all__ = [
 
 # --- Admin — List serializers (read-only, flat representations) ---------------------------------------
 
-
 class AdminCustomerListSerializer(serializers.ModelSerializer):
-    avatar = AbsoluteURLImageField(read_only=True)
-
+    avatar       = AbsoluteURLImageField(read_only=True)
+    total_orders = serializers.SerializerMethodField()
+ 
     class Meta:
-        model = User
-        fields = [
-            "id",
-            "full_name",
-            "username",
-            "phone",
-            "email",
-            "avatar",
-            "is_active",
-            "created_at",
-        ]
+        model  = User
+        fields = ["id", "full_name", "username", "phone", "email",
+                  "avatar", "is_active", "total_orders", "created_at"]
         read_only_fields = fields
+ 
+    def get_total_orders(self, obj):
+        return obj.orders.count()
 
 
 class AdminOwnerListSerializer(serializers.ModelSerializer):

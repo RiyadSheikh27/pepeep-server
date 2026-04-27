@@ -3,10 +3,15 @@ from apps.utils.models import TimeStampedModel
 
 # --- Restaurant Section -----------------------------------------------------------------------
 
+
 class RestaurantCategory(TimeStampedModel):
     name = models.CharField(max_length=100, unique=True)
-    icon = models.ImageField(upload_to="restaurant_categories/icons/%Y/%m/", null=True, blank=True)
-    banner = models.ImageField(upload_to="restaurant_categories/banners/%Y/%m/", null=True, blank=True)
+    icon = models.ImageField(
+        upload_to="restaurant_categories/icons/%Y/%m/", null=True, blank=True
+    )
+    banner = models.ImageField(
+        upload_to="restaurant_categories/banners/%Y/%m/", null=True, blank=True
+    )
     sort_order = models.PositiveSmallIntegerField(default=0, db_index=True)
 
     class Meta:
@@ -33,32 +38,59 @@ class Restaurant(TimeStampedModel):
     # Brand
     legal_name = models.CharField(max_length=200)
     brand_name = models.CharField(max_length=200)
-    category = models.ForeignKey(RestaurantCategory, on_delete=models.SET_NULL, null=True, related_name="restaurants")
-    logo = models.ImageField(upload_to="restaurants/logos/%Y/%m/", null=True, blank=True)
+    category = models.ForeignKey(
+        RestaurantCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="restaurants",
+    )
+    logo = models.ImageField(
+        upload_to="restaurants/logos/%Y/%m/", null=True, blank=True
+    )
     short_description = models.TextField(blank=True, default="")
 
     # Legal
     cr_number = models.CharField(max_length=20, blank=True, default="")
     vat_number = models.CharField(max_length=20, blank=True, default="")
-    cr_document = models.FileField(upload_to="restaurants/docs/cr/%Y/%m/", null=True, blank=True)
-    vat_certificate = models.FileField(upload_to="restaurants/docs/vat/%Y/%m/", null=True, blank=True)
+    cr_document = models.FileField(
+        upload_to="restaurants/docs/cr/%Y/%m/", null=True, blank=True
+    )
+    vat_certificate = models.FileField(
+        upload_to="restaurants/docs/vat/%Y/%m/", null=True, blank=True
+    )
     # Address
     short_address = models.CharField(max_length=200, blank=True, default="")
     street_name = models.CharField(max_length=200, blank=True, default="")
-    building_number = models.CharField(max_length=20,  blank=True, default="")
-    building_secondary_number = models.CharField(max_length=20,  blank=True, default="")
+    building_number = models.CharField(max_length=20, blank=True, default="")
+    building_secondary_number = models.CharField(max_length=20, blank=True, default="")
     district = models.CharField(max_length=100, blank=True, default="")
-    postal_code = models.CharField(max_length=10,  blank=True, default="")
-    unit_number = models.CharField(max_length=20,  blank=True, default="")
+    postal_code = models.CharField(max_length=10, blank=True, default="")
+    unit_number = models.CharField(max_length=20, blank=True, default="")
     city = models.CharField(max_length=100, blank=True, default="")
     country = models.CharField(max_length=100, default="Saudi Arabia")
-    
-    # Location coordinates
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, help_text="Restaurant latitude")
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, help_text="Restaurant longitude")
 
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
-    is_active = models.BooleanField(default=False, db_index=True)  # activated on approval
+    # Location coordinates
+    latitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        help_text="Restaurant latitude",
+    )
+    longitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        help_text="Restaurant longitude",
+    )
+
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True
+    )
+    is_active = models.BooleanField(
+        default=False, db_index=True
+    )  # activated on approval
 
     class Meta:
         db_table = "restaurants"
@@ -80,7 +112,9 @@ class RestaurantBankDetail(TimeStampedModel):
         SIB = "sib", "Saudi Investment Bank"
         OTHER = "other", "Other"
 
-    restaurant = models.OneToOneField(Restaurant, on_delete=models.CASCADE, related_name="bank_detail")
+    restaurant = models.OneToOneField(
+        Restaurant, on_delete=models.CASCADE, related_name="bank_detail"
+    )
     bank_name = models.CharField(max_length=50, choices=BankName.choices)
     account_holder_name = models.CharField(max_length=200)
     iban = models.CharField(max_length=34)
@@ -95,7 +129,9 @@ class RestaurantBankDetail(TimeStampedModel):
 
 # ---Branch Section --------------------------------------------------------------------------------
 class Branch(TimeStampedModel):
-    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name="branches")
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="branches"
+    )
     name = models.CharField(max_length=200)
     city = models.CharField(max_length=100, blank=True, default="")
     full_address = models.CharField(max_length=300, blank=True, default="")
@@ -106,8 +142,12 @@ class Branch(TimeStampedModel):
     is_active = models.BooleanField(default=False, db_index=True)
 
     # --- New fields ---
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True
+    )
+    longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True
+    )
 
     class Meta:
         db_table = "branches"
@@ -121,8 +161,11 @@ class BranchOpeningHours(TimeStampedModel):
     One row per day per branch.
     shifts: [{"open": "09:00", "close": "22:00"}, ...]  -- up to 3 shifts per day.
     """
-    branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="opening_hours")
-    day = models.CharField(max_length=10)   # monday, tuesday, ...
+
+    branch = models.ForeignKey(
+        Branch, on_delete=models.CASCADE, related_name="opening_hours"
+    )
+    day = models.CharField(max_length=10)  # monday, tuesday, ...
     is_open = models.BooleanField(default=True)
     shifts = models.JSONField(default=list)
 
@@ -132,9 +175,10 @@ class BranchOpeningHours(TimeStampedModel):
 
     def __str__(self):
         return f"{self.branch.name} — {self.day}"
-    
-    
+
+
 # --- Employee Section ----------------------------------------------------------------------------
+
 
 class Employee(TimeStampedModel):
 
@@ -150,10 +194,15 @@ class Employee(TimeStampedModel):
     user = models.OneToOneField(
         "authentication.User", on_delete=models.CASCADE, related_name="employee_profile"
     )
-    branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="employees")
+    branch = models.ForeignKey(
+        Branch, on_delete=models.CASCADE, related_name="employees"
+    )
     permissions = models.JSONField(default=list)
-    created_by  = models.ForeignKey(
-        "authentication.User", on_delete=models.SET_NULL, null=True, related_name="created_employees"
+    created_by = models.ForeignKey(
+        "authentication.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="created_employees",
     )
 
     class Meta:
@@ -164,3 +213,19 @@ class Employee(TimeStampedModel):
 
     def __str__(self):
         return f"{self.user.username} @ {self.branch}"
+
+
+# --- Bookmark Restaurant (for customers) -----------------------------------------------------------------------
+
+
+class RestaurantBookmark(TimeStampedModel):
+    customer = models.ForeignKey(
+        "authentication.User", on_delete=models.CASCADE, related_name="bookmarks"
+    )
+    branch = models.ForeignKey(
+        "restaurants.Branch", on_delete=models.CASCADE, related_name="bookmarks"
+    )  # ← Branch not Restaurant
+
+    class Meta:
+        db_table = "restaurant_bookmarks"
+        unique_together = [["customer", "branch"]]

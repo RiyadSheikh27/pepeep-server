@@ -18,30 +18,51 @@ from .models import OTPVerification
 from .permissions import IsCustomer, IsOwner, IsAdmin
 from .serializers import (
     # Customer
-    CustomerOTPSendSerializer, CustomerOTPVerifySerializer,
+    CustomerOTPSendSerializer,
+    CustomerOTPVerifySerializer,
     CustomerProfileSerializer,
-    ChangePhoneRequestSerializer, ChangePhoneVerifySerializer,
+    ChangePhoneRequestSerializer,
+    ChangePhoneVerifySerializer,
     # Employee
-    EmployeeLoginSerializer, EmployeeDetailSerializer, CreateEmployeeSerializer,
+    EmployeeLoginSerializer,
+    EmployeeDetailSerializer,
+    CreateEmployeeSerializer,
     # Owner — auth & registration
-    OwnerLoginSerializer, BranchLoginSerializer,
-    BranchCreateSerializer, OwnerRegSubmitSerializer,
+    OwnerLoginSerializer,
+    BranchLoginSerializer,
+    BranchCreateSerializer,
+    OwnerRegSubmitSerializer,
     # Owner — profile
-    OwnerProfileSerializer, OpeningHoursWriteSerializer,
+    OwnerProfileSerializer,
+    OpeningHoursWriteSerializer,
     # Admin
-    AdminLoginSerializer, AdminForgotPasswordSerializer,
-    AdminResetPasswordSerializer, AdminProfileSerializer,
-    AdminCustomerListSerializer, AdminOwnerListSerializer, AdminEmployeeListSerializer,
+    AdminLoginSerializer,
+    AdminForgotPasswordSerializer,
+    AdminResetPasswordSerializer,
+    AdminProfileSerializer,
+    AdminCustomerListSerializer,
+    AdminOwnerListSerializer,
+    AdminEmployeeListSerializer,
 )
 from .services import (
-    OTPService, CustomerAuthService, EmployeeAuthService,
-    OwnerAuthService, AdminAuthService,
-    AuthError, OTPRateLimited, OTPExpired, OTPInvalid,
-    OTPMaxAttempts, InvalidCredentials, InvalidToken, NotFound,
+    OTPService,
+    CustomerAuthService,
+    EmployeeAuthService,
+    OwnerAuthService,
+    AdminAuthService,
+    AuthError,
+    OTPRateLimited,
+    OTPExpired,
+    OTPInvalid,
+    OTPMaxAttempts,
+    InvalidCredentials,
+    InvalidToken,
+    NotFound,
 )
 
 
 # --- Helpers --------------------------------------------------------------
+
 
 def _handle(exc):
     """Map a service exception to an APIResponse error."""
@@ -140,11 +161,13 @@ def _parse_branches(request) -> tuple[list | None, "APIResponse | None"]:
 
 # --- Customer ------------------------------------------------------------------
 
+
 class CustomerOTPSendView(APIView):
     """
     POST /api/v1/customer/auth/otp/send/
     Body: { phone, purpose }  purpose: "login" | "change_phone"
     """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -166,6 +189,7 @@ class CustomerLoginView(APIView):
     POST /api/v1/customer/auth/login/
     Body: { phone, otp_code }
     """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -176,15 +200,23 @@ class CustomerLoginView(APIView):
             user, tokens, is_new = CustomerAuthService.login_or_create(
                 s.validated_data["phone"], s.validated_data["otp_code"]
             )
-        except (OTPExpired, OTPInvalid, OTPMaxAttempts, InvalidCredentials, AuthError) as e:
+        except (
+            OTPExpired,
+            OTPInvalid,
+            OTPMaxAttempts,
+            InvalidCredentials,
+            AuthError,
+        ) as e:
             return _handle(e)
         return APIResponse.success(
-            message="Welcome! Profile created." if is_new else "Logged in successfully.",
+            message=(
+                "Welcome! Profile created." if is_new else "Logged in successfully."
+            ),
             data={
                 "user": {
-                    "id":          str(user.id),
-                    "full_name":   user.full_name,
-                    "phone":       user.phone,
+                    "id": str(user.id),
+                    "full_name": user.full_name,
+                    "phone": user.phone,
                     "is_new_user": is_new,
                 },
                 "tokens": tokens,
@@ -197,6 +229,7 @@ class CustomerProfileView(APIView):
     GET   /api/v1/customer/profile/
     PATCH /api/v1/customer/profile/
     """
+
     permission_classes = [IsAuthenticated, IsCustomer]
 
     def get(self, request):
@@ -215,6 +248,7 @@ class CustomerChangePhoneRequestView(APIView):
     POST /api/v1/customer/auth/change-phone/request/
     Body: { phone }  ← the new number
     """
+
     permission_classes = [IsAuthenticated, IsCustomer]
 
     def post(self, request):
@@ -222,7 +256,9 @@ class CustomerChangePhoneRequestView(APIView):
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         try:
-            OTPService.send(s.validated_data["phone"], OTPVerification.Purpose.CHANGE_PHONE)
+            OTPService.send(
+                s.validated_data["phone"], OTPVerification.Purpose.CHANGE_PHONE
+            )
         except (OTPRateLimited, AuthError) as e:
             return _handle(e)
         return APIResponse.success(
@@ -236,6 +272,7 @@ class CustomerChangePhoneVerifyView(APIView):
     POST /api/v1/customer/auth/change-phone/verify/
     Body: { new_phone, otp_code, phone_verification_token }
     """
+
     permission_classes = [IsAuthenticated, IsCustomer]
 
     def post(self, request):
@@ -244,8 +281,12 @@ class CustomerChangePhoneVerifyView(APIView):
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         d = s.validated_data
         try:
-            otp = OTPService.verify(d["new_phone"], d["otp_code"], OTPVerification.Purpose.CHANGE_PHONE)
-            user = CustomerAuthService.change_phone(request.user, d["new_phone"], otp.verification_token)
+            otp = OTPService.verify(
+                d["new_phone"], d["otp_code"], OTPVerification.Purpose.CHANGE_PHONE
+            )
+            user = CustomerAuthService.change_phone(
+                request.user, d["new_phone"], otp.verification_token
+            )
         except (OTPExpired, OTPInvalid, OTPMaxAttempts, InvalidToken, AuthError) as e:
             return _handle(e)
         return APIResponse.success(
@@ -256,11 +297,13 @@ class CustomerChangePhoneVerifyView(APIView):
 
 # --- Employee -------------------------------------------------------------------
 
+
 class EmployeeLoginView(APIView):
     """
     POST /api/v1/employee/auth/login/
     Body: { username, password }
     """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -296,11 +339,13 @@ class EmployeeLoginView(APIView):
 
 # --- Owner — Registration ----------------------------------------------------------------------
 
+
 class OwnerRegOTPSendView(APIView):
     """
     POST /api/v1/owner/auth/register/otp/send/
     Body: { phone }
     """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -311,7 +356,9 @@ class OwnerRegOTPSendView(APIView):
             OTPService.send(phone, OTPVerification.Purpose.OWNER_REGISTER)
         except (OTPRateLimited, AuthError) as e:
             return _handle(e)
-        return APIResponse.success(message="OTP sent. Valid for 5 minutes.", data={"phone": phone})
+        return APIResponse.success(
+            message="OTP sent. Valid for 5 minutes.", data={"phone": phone}
+        )
 
 
 class OwnerRegOTPVerifyView(APIView):
@@ -319,6 +366,7 @@ class OwnerRegOTPVerifyView(APIView):
     POST /api/v1/owner/auth/register/otp/verify/
     Body: { phone, otp_code }
     """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -330,7 +378,9 @@ class OwnerRegOTPVerifyView(APIView):
                 message="Invalid input.",
             )
         try:
-            otp = OTPService.verify(phone, otp_code, OTPVerification.Purpose.OWNER_REGISTER)
+            otp = OTPService.verify(
+                phone, otp_code, OTPVerification.Purpose.OWNER_REGISTER
+            )
         except (OTPExpired, OTPInvalid, OTPMaxAttempts, AuthError) as e:
             return _handle(e)
         return APIResponse.success(
@@ -345,6 +395,7 @@ class OwnerRegSubmitView(APIView):
     Content-Type: multipart/form-data
     Branches sent as JSON string in 'branches' field.
     """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -369,11 +420,13 @@ class OwnerRegSubmitView(APIView):
 
 # --- Owner — Login & Branch list (post-login selector) ----------------------------
 
+
 class OwnerLoginView(APIView):
     """
     POST /api/v1/owner/auth/login/
     Body: { phone, password }
     """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -403,6 +456,7 @@ class OwnerBranchListView(APIView):
     GET /api/v1/owner/branches/
     Re-fetch active branch list (for branch switching after login).
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def get(self, request):
@@ -415,11 +469,13 @@ class OwnerBranchListView(APIView):
 
 # --- Owner — Profile (personal info)
 
+
 class OwnerProfileView(APIView):
     """
     GET /api/v1/owner/profile/ — view personal info
     PATCH /api/v1/owner/profile/ — update full_name, email, avatar
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def get(self, request):
@@ -433,8 +489,8 @@ class OwnerProfileView(APIView):
         return APIResponse.success(message="Profile updated.", data=s.data)
 
 
-
 # --- Owner — Restaurant (brand / legal / address) --------------------------------------
+
 
 class OwnerRestaurantView(APIView):
     """
@@ -442,6 +498,7 @@ class OwnerRestaurantView(APIView):
     PATCH /api/v1/owner/restaurant/   — update brand, legal, address fields
     Content-Type: multipart/form-data (supports logo, cr_document, vat_certificate)
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def get(self, request):
@@ -465,11 +522,13 @@ class OwnerRestaurantView(APIView):
 
 # --- Owner — Bank Detail -----------------------------------------------------
 
+
 class OwnerBankDetailView(APIView):
     """
     GET /api/v1/owner/restaurant/bank/ — view bank details
     PATCH /api/v1/owner/restaurant/bank/ — update bank details
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def get(self, request):
@@ -477,34 +536,38 @@ class OwnerBankDetailView(APIView):
             restaurant = OwnerAuthService.get_restaurant(request.user)
         except NotFound as e:
             return _handle(e)
-        return APIResponse.success(data=RestaurantBankDetailSerializer(restaurant.bank_detail).data)
+        return APIResponse.success(
+            data=RestaurantBankDetailSerializer(restaurant.bank_detail).data
+        )
 
     def patch(self, request):
         try:
             restaurant = OwnerAuthService.get_restaurant(request.user)
         except NotFound as e:
             return _handle(e)
-        s = RestaurantBankDetailSerializer(restaurant.bank_detail, data=request.data, partial=True)
+        s = RestaurantBankDetailSerializer(
+            restaurant.bank_detail, data=request.data, partial=True
+        )
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         s.save()
         return APIResponse.success(message="Bank details updated.")
 
 
-
 # --- Owner — Branch management (all branches, including inactive) -------------------------------------
+
 
 class OwnerBranchManageView(APIView):
     """
     GET /api/v1/owner/restaurant/branches/ — list all branches (including inactive)
     POST /api/v1/owner/restaurant/branches/ — add new branch (starts inactive)
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def get(self, request):
         branches = (
-            Branch.objects
-            .filter(restaurant__owner=request.user)
+            Branch.objects.filter(restaurant__owner=request.user)
             .prefetch_related("opening_hours")
             .order_by("name")
         )
@@ -533,6 +596,7 @@ class OwnerBranchDetailView(APIView):
     GET /api/v1/owner/restaurant/branches/{id}/ — branch detail
     PATCH /api/v1/owner/restaurant/branches/{id}/ — update name, city, address, min_order
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def get(self, request, pk):
@@ -567,6 +631,7 @@ class OwnerBranchOpeningHoursView(APIView):
     Replace all opening hours for a branch.
     Body: [ { day, is_open, shifts: [{open, close}] } ]
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def put(self, request, pk):
@@ -579,7 +644,9 @@ class OwnerBranchOpeningHoursView(APIView):
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         try:
-            branch = OwnerAuthService.set_branch_opening_hours(request.user, pk, s.validated_data)
+            branch = OwnerAuthService.set_branch_opening_hours(
+                request.user, pk, s.validated_data
+            )
         except (NotFound, AuthError) as e:
             return _handle(e)
         return APIResponse.success(
@@ -590,17 +657,18 @@ class OwnerBranchOpeningHoursView(APIView):
 
 # --- Owner — Staff ----------------------------------------------------------------
 
+
 class OwnerStaffListCreateView(APIView):
     """
     GET /api/v1/owner/staff/ — list all employees
     POST /api/v1/owner/staff/ — create employee account
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def get(self, request):
         employees = (
-            Employee.objects
-            .filter(branch__restaurant__owner=request.user)
+            Employee.objects.filter(branch__restaurant__owner=request.user)
             .select_related("user", "branch", "branch__restaurant")
             .order_by("branch__name", "user__username")
         )
@@ -615,6 +683,7 @@ class OwnerStaffListCreateView(APIView):
             return APIResponse.error(errors=s.errors, message="Invalid input.")
 
         from django.db import transaction
+
         with transaction.atomic():
             user = request.user.__class__.objects.create_user(
                 phone=s.validated_data.get("phone") or None,
@@ -623,7 +692,7 @@ class OwnerStaffListCreateView(APIView):
                 role="employee",
             )
             branch = Branch.objects.get(id=s.validated_data["branch_id"])
-            emp    = Employee.objects.create(
+            emp = Employee.objects.create(
                 user=user,
                 branch=branch,
                 permissions=list(s.validated_data["permissions"]),
@@ -643,15 +712,14 @@ class OwnerStaffDetailView(APIView):
     PATCH /api/v1/owner/staff/{id}/   — update permissions / branch / is_active
     DELETE /api/v1/owner/staff/{id}/   — deactivate employee
     """
+
     permission_classes = [IsAuthenticated, IsOwner]
 
     def _get_employee(self, request, pk):
         try:
-            return (
-                Employee.objects
-                .select_related("user", "branch", "branch__restaurant")
-                .get(id=pk, branch__restaurant__owner=request.user)
-            )
+            return Employee.objects.select_related(
+                "user", "branch", "branch__restaurant"
+            ).get(id=pk, branch__restaurant__owner=request.user)
         except Employee.DoesNotExist:
             return None
 
@@ -673,13 +741,17 @@ class OwnerStaffDetailView(APIView):
         if permissions is not None:
             invalid = set(permissions) - set(Employee.ALL_PERMISSIONS)
             if invalid:
-                return APIResponse.error(errors={"permissions": [f"Invalid permissions: {sorted(invalid)}"]})
+                return APIResponse.error(
+                    errors={"permissions": [f"Invalid permissions: {sorted(invalid)}"]}
+                )
             emp.permissions = list(permissions)
             emp.save(update_fields=["permissions", "updated_at"])
 
         if branch_id is not None:
             try:
-                branch = Branch.objects.get(id=branch_id, restaurant__owner=request.user, is_active=True)
+                branch = Branch.objects.get(
+                    id=branch_id, restaurant__owner=request.user, is_active=True
+                )
                 emp.branch = branch
                 emp.save(update_fields=["branch", "updated_at"])
             except Branch.DoesNotExist:
@@ -689,7 +761,9 @@ class OwnerStaffDetailView(APIView):
             emp.user.is_active = bool(is_active)
             emp.user.save(update_fields=["is_active", "updated_at"])
 
-        return APIResponse.success(message="Employee updated.", data=EmployeeDetailSerializer(emp).data)
+        return APIResponse.success(
+            message="Employee updated.", data=EmployeeDetailSerializer(emp).data
+        )
 
     def delete(self, request, pk):
         emp = self._get_employee(request, pk)
@@ -702,8 +776,10 @@ class OwnerStaffDetailView(APIView):
 
 # --- Admin — Auth ---------------------------------------------------------------------------------------
 
+
 class AdminLoginView(APIView):
     """POST /api/v1/admin/auth/login/ Body: { phone, password }"""
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -711,13 +787,19 @@ class AdminLoginView(APIView):
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         try:
-            user, tokens = AdminAuthService.login(s.validated_data["phone"], s.validated_data["password"])
+            user, tokens = AdminAuthService.login(
+                s.validated_data["phone"], s.validated_data["password"]
+            )
         except InvalidCredentials as e:
             return _handle(e)
         return APIResponse.success(
             message="Logged in successfully.",
             data={
-                "user": {"id": str(user.id), "full_name": user.full_name, "phone": user.phone},
+                "user": {
+                    "id": str(user.id),
+                    "full_name": user.full_name,
+                    "phone": user.phone,
+                },
                 "tokens": tokens,
             },
         )
@@ -725,6 +807,7 @@ class AdminLoginView(APIView):
 
 class AdminForgotPasswordView(APIView):
     """POST /api/v1/admin/auth/forgot-password/  Body: { phone }"""
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -732,7 +815,9 @@ class AdminForgotPasswordView(APIView):
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         try:
-            OTPService.send(s.validated_data["phone"], OTPVerification.Purpose.PASSWORD_RESET)
+            OTPService.send(
+                s.validated_data["phone"], OTPVerification.Purpose.PASSWORD_RESET
+            )
         except (OTPRateLimited, AuthError) as e:
             return _handle(e)
         return APIResponse.success(
@@ -743,6 +828,7 @@ class AdminForgotPasswordView(APIView):
 
 class AdminVerifyOTPView(APIView):
     """POST /api/v1/admin/auth/otp/verify/  Body: { phone, otp_code }"""
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -754,7 +840,9 @@ class AdminVerifyOTPView(APIView):
                 message="Invalid input.",
             )
         try:
-            otp = OTPService.verify(phone, otp_code, OTPVerification.Purpose.PASSWORD_RESET)
+            otp = OTPService.verify(
+                phone, otp_code, OTPVerification.Purpose.PASSWORD_RESET
+            )
         except (OTPExpired, OTPInvalid, OTPMaxAttempts, AuthError) as e:
             return _handle(e)
         return APIResponse.success(
@@ -765,6 +853,7 @@ class AdminVerifyOTPView(APIView):
 
 class AdminResetPasswordView(APIView):
     """POST /api/v1/admin/auth/reset-password/  Body: { phone, phone_verification_token, new_password }"""
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -773,24 +862,36 @@ class AdminResetPasswordView(APIView):
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         d = s.validated_data
         try:
-            AdminAuthService.reset_password(d["phone"], d["phone_verification_token"], d["new_password"])
+            AdminAuthService.reset_password(
+                d["phone"], d["phone_verification_token"], d["new_password"]
+            )
         except (InvalidToken, InvalidCredentials, AuthError) as e:
             return _handle(e)
-        return APIResponse.success(message="Password reset successfully. Please log in.")
+        return APIResponse.success(
+            message="Password reset successfully. Please log in."
+        )
 
 
 class AdminProfileView(APIView):
-    """
-    GET /api/v1/admin/profile/
-    PATCH /api/v1/admin/profile/
-    """
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return APIResponse.success(data=AdminProfileSerializer(request.user).data)
+        from apps.authentication.serializers import AdminProfileSerializer
+
+        return APIResponse.success(
+            data=AdminProfileSerializer(request.user, context={"request": request}).data
+        )
 
     def patch(self, request):
-        s = AdminProfileSerializer(request.user, data=request.data, partial=True)
+        from apps.authentication.serializers import AdminProfileSerializer
+
+        # Use request.FILES for multipart avatar upload
+        s = AdminProfileSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
         s.save()
@@ -799,8 +900,10 @@ class AdminProfileView(APIView):
 
 # --- Admin — Restaurant & Branch Approvals --------------------------------------------------
 
+
 class AdminRestaurantApproveView(APIView):
     """POST /api/v1/admin/restaurants/{id}/approve/"""
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def post(self, request, pk):
@@ -808,16 +911,21 @@ class AdminRestaurantApproveView(APIView):
             AdminAuthService.approve_restaurant(pk)
         except (NotFound, AuthError) as e:
             return _handle(e)
-        return APIResponse.success(message="Restaurant approved and owner account activated.")
+        return APIResponse.success(
+            message="Restaurant approved and owner account activated."
+        )
 
 
 class AdminRestaurantRejectView(APIView):
     """POST /api/v1/admin/restaurants/{id}/reject/  Body: { reason } (optional)"""
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def post(self, request, pk):
         try:
-            AdminAuthService.reject_restaurant(pk, reason=request.data.get("reason", ""))
+            AdminAuthService.reject_restaurant(
+                pk, reason=request.data.get("reason", "")
+            )
         except (NotFound, AuthError) as e:
             return _handle(e)
         return APIResponse.success(message="Restaurant rejected.")
@@ -825,6 +933,7 @@ class AdminRestaurantRejectView(APIView):
 
 class AdminBranchApproveView(APIView):
     """POST /api/v1/admin/branches/{id}/approve/"""
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def post(self, request, pk):
@@ -837,6 +946,7 @@ class AdminBranchApproveView(APIView):
 
 class AdminBranchRejectView(APIView):
     """POST /api/v1/admin/branches/{id}/reject/"""
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def post(self, request, pk):
@@ -847,8 +957,8 @@ class AdminBranchRejectView(APIView):
         return APIResponse.success(message="Branch rejected/deactivated.")
 
 
-
 # --- Shared ----------------------------------------------------------------------------
+
 
 class LogoutView(APIView):
     """
@@ -856,6 +966,7 @@ class LogoutView(APIView):
     Body: { refresh }
     Blacklists the refresh token. Works for all roles.
     """
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -865,18 +976,21 @@ class LogoutView(APIView):
         try:
             RefreshToken(token_str).blacklist()
         except TokenError as e:
-            return APIResponse.error(errors={"refresh": [str(e)]}, message="Invalid token.")
+            return APIResponse.error(
+                errors={"refresh": [str(e)]}, message="Invalid token."
+            )
         return APIResponse.success(message="Logged out successfully.")
 
 
-
 # --- Admin — Customer management -------------------------------------------------------------
+
 
 class AdminCustomerListView(APIView):
     """
     GET /api/v1/admin/customers/
     Query params: search, is_active (true|false), page, page_size
     """
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
@@ -893,6 +1007,7 @@ class AdminCustomerDetailView(APIView):
     PATCH /api/v1/admin/customers/{id}/   — activate / deactivate  { is_active: bool }
     DELETE /api/v1/admin/customers/{id}/   — hard delete
     """
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request, pk):
@@ -925,12 +1040,14 @@ class AdminCustomerDetailView(APIView):
 
 # --- Admin — Owner management -------------------------------------------------------
 
+
 class AdminOwnerListView(APIView):
     """
     GET /api/v1/admin/owners/
     Query params: search, is_active (true|false), status (pending|approved|rejected),
                   page, page_size
     """
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
@@ -948,6 +1065,7 @@ class AdminOwnerDetailView(APIView):
     PATCH /api/v1/admin/owners/{id}/ — activate / deactivate  { is_active: bool }
     DELETE /api/v1/admin/owners/{id}/ — hard delete (cascades to restaurant, branches, staff)
     """
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request, pk):
@@ -979,11 +1097,13 @@ class AdminOwnerDetailView(APIView):
 
 # --- Admin — Employee management (read-only + deactivate) ----------------------------
 
+
 class AdminEmployeeListView(APIView):
     """
     GET /api/v1/admin/employees/
     Query params: search, is_active (true|false), restaurant_id, page, page_size
     """
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
@@ -1000,12 +1120,16 @@ class AdminEmployeeDetailView(APIView):
     GET /api/v1/admin/employees/{id}/   — detail
     PATCH /api/v1/admin/employees/{id}/   — activate / deactivate  { is_active: bool }
     """
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def _get_employee(self, pk):
         from apps.restaurants.models import Employee as Emp
+
         try:
-            return Emp.objects.select_related("user", "branch", "branch__restaurant").get(id=pk)
+            return Emp.objects.select_related(
+                "user", "branch", "branch__restaurant"
+            ).get(id=pk)
         except Emp.DoesNotExist:
             return None
 
@@ -1032,11 +1156,13 @@ class AdminEmployeeDetailView(APIView):
 
 # --- Admin — Restaurant management (list / detail — approve/reject already exist) --------------
 
+
 class AdminRestaurantListView(APIView):
     """
     GET /api/v1/admin/restaurants/
     Query params: search, status (pending|approved|rejected), category, page, page_size
     """
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
@@ -1053,6 +1179,7 @@ class AdminRestaurantDetailView(APIView):
     GET /api/v1/admin/restaurants/{id}/
     Full restaurant detail including branches and bank info.
     """
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request, pk):
@@ -1065,11 +1192,13 @@ class AdminRestaurantDetailView(APIView):
 
 # --- Admin — Branch management (list / detail — approve/reject already exist) ----------
 
+
 class AdminBranchListView(APIView):
     """
     GET /api/v1/admin/branches/
     Query params: search, is_active (true|false), restaurant_id, page, page_size
     """
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
@@ -1086,6 +1215,7 @@ class AdminBranchDetailView(APIView):
     GET /api/v1/admin/branches/{id}/
     Full branch detail including opening hours.
     """
+
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request, pk):

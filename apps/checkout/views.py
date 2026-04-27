@@ -574,14 +574,12 @@ class ConfirmOrderView(APIView):
 
         # ── Payment ─────────────────────────────────────────────────────────
         method = d["payment_method"]
-
-        if method == Payment.Method.STRIPE:
+ 
+        if method == "stripe":
             try:
                 import stripe
                 from django.conf import settings
-
                 stripe.api_key = settings.STRIPE_SECRET_KEY
-
                 intent = stripe.PaymentIntent.retrieve(d["stripe_intent_id"])
                 if intent["status"] != "succeeded":
                     return APIResponse.error(
@@ -601,7 +599,32 @@ class ConfirmOrderView(APIView):
                     errors={"stripe": [str(exc)]},
                     status_code=502,
                 )
-        else:
+ 
+        elif method == "wallet":
+            from .models import CustomerWallet, CustomerWalletTransaction
+            wallet, _ = CustomerWallet.objects.get_or_create(customer=request.user)
+            if wallet.balance < total:
+                return APIResponse.error(
+                    message=f"Insufficient wallet balance. Available: {wallet.balance} SAR.",
+                    status_code=400,
+                )
+            # Deduct from wallet atomically
+            wallet.balance -= total
+            wallet.save(update_fields=["balance", "updated_at"])
+            CustomerWalletTransaction.objects.create(
+                wallet=wallet,
+                tx_type="order_pay",
+                amount=total,
+                reason=f"Order payment",
+                actioned_by=request.user,
+            )
+            payment = Payment.objects.create(
+                method=Payment.Method.WALLET,
+                status=Payment.Status.PAID,
+                amount=total,
+            )
+ 
+        else:  # cash
             payment = Payment.objects.create(
                 method=Payment.Method.CASH,
                 status=Payment.Status.PENDING,
@@ -637,7 +660,7 @@ class ConfirmOrderView(APIView):
             )
 
         # ── Commission (Stripe only — payment already confirmed) ─────────────
-        if method == Payment.Method.STRIPE:
+        if method in ("stripe", "wallet"):
             _apply_commission(order)
 
         # ── Clear Cart ───────────────────────────────────────────────────────
@@ -687,6 +710,9 @@ class OrderListView(APIView):
 
         elif user.role == "admin":
             qs = Order.objects.all()
+            customer_id = request.query_params.get("customer_id", "")
+            if customer_id:
+                qs = qs.filter(customer_id=customer_id)
 
         else:
             return APIResponse.error(message="Unauthorized.", status_code=403)
