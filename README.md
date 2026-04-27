@@ -39,14 +39,20 @@ API runs at `http://localhost:8000` — docs at `/api/docs/`.
 
 ```env
 SECRET_KEY=
-DB_NAME=pepeep_db
-DB_USER=postgres
-DB_PASSWORD=
-REDIS_URL=redis://localhost:6379/0
-AWS_STORAGE_BUCKET_NAME=
-TILLER_API_KEY=
-FIREBASE_CREDENTIALS_PATH=firebase-service-account.json
-DEFAULT_COMMISSION_RATE=0.15
+DEBUG=
+ALLOWED_HOSTS=
+
+REDIS_URL=
+JWT_ACCESS_MINUTES=
+JWT_REFRESH_DAYS=
+
+BASE_URL=
+
+# Google Maps API Key (for distance matrix API - optional)
+GOOGLE_MAPS_API_KEY=""
+
+STRIPE_SECRET_KEY=sk_test_xxxxxxxxx
+STRIPE_PUBLISHABLE_KEY=pk_test_xxxxxxx
 ```
 
 ---
@@ -69,6 +75,8 @@ python manage.py migrate          # apply migrations
 python manage.py createsuperuser  # create admin user
 python manage.py test             # run tests
 celery -A config worker -l info   # start task worker
+daphne -b 0.0.0.0 -p 8070 config.asgi:application #Start Server
+
 ```
 
 ---
@@ -76,3 +84,5 @@ celery -A config worker -l info   # start task worker
 ## License
 
 Private — all rights reserved.
+
+

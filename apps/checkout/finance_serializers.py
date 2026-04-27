@@ -152,6 +152,7 @@ class PayoutActionSerializer(serializers.Serializer):
 
 class SupportTicketSerializer(serializers.ModelSerializer):
     order = serializers.SerializerMethodField()
+    is_viewed = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = SupportTicket
@@ -162,6 +163,7 @@ class SupportTicketSerializer(serializers.ModelSerializer):
             "description",
             "order",
             "status",
+            "is_viewed",
             "admin_reply",
             "replied_at",
             "created_at",

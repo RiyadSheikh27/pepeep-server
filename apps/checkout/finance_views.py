@@ -116,24 +116,22 @@ def _seven_day_trend(qs, field="subtotal"):
     ]
 
 
-def _paginate(request, qs, serializer_class):
+def _paginate(request, qs, serializer_class, meta=None):
     try:
-        page = max(1, int(request.query_params.get("page", 1)))
+        page      = max(1, int(request.query_params.get("page", 1)))
         page_size = min(100, max(1, int(request.query_params.get("page_size", 20))))
     except (ValueError, TypeError):
         page, page_size = 1, 20
     total = qs.count()
     start = (page - 1) * page_size
+    final_meta = {"total": total, "page": page, "page_size": page_size,
+                  "pages": max(1, -(-total // page_size))}
+    if meta:
+        final_meta.update(meta)
     return APIResponse.success(
-        data=serializer_class(qs[start : start + page_size], many=True).data,
-        meta={
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "pages": max(1, -(-total // page_size)),
-        },
+        data=serializer_class(qs[start:start + page_size], many=True).data,
+        meta=final_meta,
     )
-
 
 # --- ADMIN DASHBOARD -------------------------------------------------------------------------------------------------------
 
@@ -514,6 +512,8 @@ class SupportTicketView(APIView):
 
     def get(self, request):
         user = request.user
+        status = request.query_params.get("status", "")
+
         if user.role == "admin":
             qs = SupportTicket.objects.select_related("customer", "order")
         elif user.role == "customer":
@@ -521,10 +521,36 @@ class SupportTicketView(APIView):
         else:
             return APIResponse.error(message="Unauthorized.", status_code=403)
 
-        if request.query_params.get("status"):
-            qs = qs.filter(status=request.query_params["status"])
+        if status:
+            qs = qs.filter(status=status)
 
-        return _paginate(request, qs.order_by("-created_at"), SupportTicketSerializer)
+        qs = qs.order_by("-created_at")
+
+        # --- Meta counts (admin only) ----------------------------------------------------
+        meta = {"count": qs.count()}
+        if user.role == "admin":
+            total = qs.count()
+            total_viewed = qs.filter(is_viewed=True).count()
+            total_new = qs.filter(is_viewed=False).count()
+
+            # Average reply time in hours (created_at → replied_at)
+            avg_reply = None
+            replied_qs = qs.filter(replied_at__isnull=False)
+            if replied_qs.exists():
+                total_hours = sum(
+                    (t.replied_at - t.created_at).total_seconds() / 3600
+                    for t in replied_qs[:200]
+                )
+                avg_reply = round(total_hours / min(replied_qs.count(), 200), 1)
+
+            meta = {
+                "total": total,
+                "total_viewed": total_viewed,
+                "total_new": total_new,
+                "avg_reply_hours": avg_reply,
+            }
+
+        return _paginate(request, qs, SupportTicketSerializer, meta=meta)
 
     def post(self, request):
         if request.user.role != "customer":
@@ -582,6 +608,13 @@ class SupportTicketDetailView(APIView):
         ticket = self._get_ticket(request, pk)
         if not ticket:
             return APIResponse.error(message="Ticket not found.", status_code=404)
+
+        # --- Mark as viewed when admin opens it ----------------------------------------
+        if request.user.role == "admin" and not ticket.is_viewed:
+            ticket.is_viewed = True
+            ticket.viewed_at = timezone.now()
+            ticket.save(update_fields=["is_viewed", "viewed_at", "updated_at"])
+
         return APIResponse.success(data=SupportTicketSerializer(ticket).data)
 
     def patch(self, request, pk):

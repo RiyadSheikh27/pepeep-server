@@ -447,6 +447,8 @@ class SupportTicket(TimeStampedModel):
         blank=True,
         related_name="ticket_replies",
     )
+    is_viewed   = models.BooleanField(default=False)
+    viewed_at   = models.DateTimeField(null=True, blank=True)
     replied_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:

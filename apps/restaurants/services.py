@@ -52,7 +52,7 @@ class RestaurantNotFound(RestaurantError):
 MenuError = RestaurantError
 MenuNotFoundError = RestaurantNotFound
 
-# --- helper shared across services method -----------------------------------------------------------------------
+# --- helper shared across services method ------------------------------------------------------------
 
 
 def _get_restaurant_category(category_id) -> RestaurantCategory:

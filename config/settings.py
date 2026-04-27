@@ -21,96 +21,93 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
 """Security"""
 
 CSRF_TRUSTED_ORIGINS = [
-    "http://10.10.13.99:8070",
+    "http://10.10.13.22:8070",
     "http://localhost:8000",
     "http://0.0.0.0:8000",
     "http://10.10.13.19:8070",
-    "http://10.10.13.99:8070",
+    "http://10.10.13.22:8070",
 ]
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5174",
     "http://localhost:5173",
     "http://localhost:3000",
-    "http://10.10.13.99:8070"
+    "http://10.10.13.22:8070",
 ]
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
 """End of Security"""
 
-# Application definition 
+# Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
     # --- Third-party apps ---
-    'corsheaders',
-    'drf_spectacular',
-
+    "corsheaders",
+    "drf_spectacular",
     "channels",
-
     # --- Local apps ---
-    'apps.authentication',
-    'apps.cities',
-    'apps.utils',
-    'apps.api',
-    'apps.restaurants',
-    'apps.food_menus',
-    'apps.checkout'
+    "apps.authentication",
+    "apps.cities",
+    "apps.utils",
+    "apps.api",
+    "apps.restaurants",
+    "apps.food_menus",
+    "apps.checkout",
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'apps.utils.middleware.NormalizeContentTypeMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "apps.utils.middleware.NormalizeContentTypeMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 AUTH_USER_MODEL = "authentication.User"
 
-ROOT_URLCONF = 'config.urls'
+ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.debug',
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'config.wsgi.application'
+WSGI_APPLICATION = "config.wsgi.application"
 
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
 
 CSRF_TRUSTED_ORIGINS = [
-    "http://10.10.13.99:8070",
+    "http://10.10.13.22:8070",
 ]
 
 # Password validation
@@ -118,16 +115,16 @@ CSRF_TRUSTED_ORIGINS = [
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -135,9 +132,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -148,19 +145,18 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 # Static files
-STATIC_URL = '/static/'
+STATIC_URL = "/static/"
 
 # Media files (user uploaded files)
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'     # This is the most important line
-
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media" 
 # Optional but recommended
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- Cache ---------------------------------------------------------------
 
@@ -190,8 +186,6 @@ REST_FRAMEWORK = {
         "rest_framework.parsers.FormParser",
         "nested_multipart_parser.drf.DrfNestedParser",
     ],
-
-
     "EXCEPTION_HANDLER": "apps.utils.exceptions.custom_exception_handler",
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_THROTTLE_CLASSES": [
@@ -207,7 +201,9 @@ REST_FRAMEWORK = {
 # --- JWT -----------------------------------------------------------------------------------
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env.int("JWT_ACCESS_MINUTES", default=60)),
+    "ACCESS_TOKEN_LIFETIME": timedelta(
+        minutes=env.int("JWT_ACCESS_MINUTES", default=60)
+    ),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=env.int("JWT_REFRESH_DAYS", default=30)),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
@@ -220,20 +216,23 @@ SIMPLE_JWT = {
 # --- API Docs ------------------------------------------------------------------------------
 
 SPECTACULAR_SETTINGS = {
-    "TITLE":       "Pepeep API",
-    "VERSION":     "1.0.0",
+    "TITLE": "Pepeep API",
+    "VERSION": "1.0.0",
     "DESCRIPTION": "Authentication API for Pepeep — Saudi car-pickup food platform.",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
     "TAGS": [
-        {"name": "customer",  "description": "Customer OTP login & profile"},
-        {"name": "employee",  "description": "Employee username/password login"},
-        {"name": "owner",     "description": "Owner login, branch selection, staff management"},
-        {"name": "admin",     "description": "Admin login, password reset, profile"},
+        {"name": "customer", "description": "Customer OTP login & profile"},
+        {"name": "employee", "description": "Employee username/password login"},
+        {
+            "name": "owner",
+            "description": "Owner login, branch selection, staff management",
+        },
+        {"name": "admin", "description": "Admin login, password reset, profile"},
     ],
 }
 
-BASE_URL = env("BASE_URL", default="http://10.10.13.99:8070/")
+BASE_URL = env("BASE_URL", default="http://10.10.13.22:8070/")
 
 
 # --- ASGI application -----------------------------------------------------------------
@@ -251,7 +250,7 @@ CHANNEL_LAYERS = {
     }
 }
 
-# --- Celery (also uses Redis) --------------------------------------------------------- 
+# --- Celery (also uses Redis) ---------------------------------------------------------
 
-CELERY_BROKER_URL     = "redis://127.0.0.1:6379/0"
+CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
 CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/0"
