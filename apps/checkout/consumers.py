@@ -73,6 +73,20 @@ class BranchOrderConsumer(AsyncWebsocketConsumer):
             )
         )
 
+    async def order_delivered(self, event):
+        """Forwarded to employee when order is marked delivered."""
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "order_delivered",
+                    "order_id": event["order_id"],
+                    "order_number": event["order_number"],
+                    "delivered_at": event.get("delivered_at"),
+                    "message": f"Order {event['order_number']} delivered successfully.",
+                }
+            )
+        )
+
     @database_sync_to_async
     def _is_authorised(self, user) -> bool:
         """
@@ -101,3 +115,84 @@ class BranchOrderConsumer(AsyncWebsocketConsumer):
             return str(emp.branch_id) == str(self.branch_id)
 
         return False
+
+
+class CustomerOrderConsumer(AsyncWebsocketConsumer):
+    """
+    Customer connects to:
+        ws://host/ws/orders/{order_id}/status/?token=<customer_access_token>
+
+    Receives:
+        - order_delivered  → when employee scans QR
+    """
+
+    async def connect(self):
+        self.order_id = self.scope["url_route"]["kwargs"]["order_id"]
+        self.group_name = f"order_{self.order_id}"
+
+        user = self.scope.get("user")
+        if not user or isinstance(user, AnonymousUser) or not user.is_authenticated:
+            await self.close(code=4001)
+            return
+
+        # Only the customer who owns the order can connect
+        authorised = await self._is_authorised(user)
+        if not authorised:
+            await self.close(code=4003)
+            return
+
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.accept()
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "connection_established",
+                    "message": f"Listening for order {self.order_id} status updates",
+                }
+            )
+        )
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    async def receive(self, text_data=None, bytes_data=None):
+        try:
+            payload = json.loads(text_data or "{}")
+        except json.JSONDecodeError:
+            return
+        if payload.get("type") == "ping":
+            await self.send(text_data=json.dumps({"type": "pong"}))
+
+    async def order_delivered(self, event):
+        """
+        Pushed by DeliverByQRView after QR scan.
+        Customer app receives this and redirects to home.
+        """
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "order_delivered",
+                    "order_id": event["order_id"],
+                    "order_number": event["order_number"],
+                    "delivered_at": event.get("delivered_at"),
+                    "message": "Your order has been delivered! Enjoy your meal 🎉",
+                }
+            )
+        )
+
+    async def new_orders_update(self, event):
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "new_orders_update",
+                    "count": event["count"],
+                    "orders": event["orders"],
+                }
+            )
+        )
+
+    @database_sync_to_async
+    def _is_authorised(self, user) -> bool:
+        from apps.checkout.models import Order
+
+        return Order.objects.filter(id=self.order_id, customer=user).exists()

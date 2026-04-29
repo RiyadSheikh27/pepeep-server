@@ -1,62 +1,47 @@
 from django.urls import path
 from apps.authentication.views import (
-    # Customer
     CustomerOTPSendView,
     CustomerLoginView,
     CustomerProfileView,
     CustomerChangePhoneRequestView,
     CustomerChangePhoneVerifyView,
-    # Employee
     EmployeeLoginView,
-    # Owner — registration
     OwnerRegOTPSendView,
     OwnerRegOTPVerifyView,
     OwnerRegSubmitView,
-    # Owner — login & branches
     OwnerLoginView,
     OwnerBranchListView,
-    # Owner — profile & restaurant
     OwnerProfileView,
     OwnerRestaurantView,
     OwnerBankDetailView,
     OwnerBranchManageView,
     OwnerBranchDetailView,
     OwnerBranchOpeningHoursView,
-    # Owner — staff
     OwnerStaffListCreateView,
     OwnerStaffDetailView,
-    # Admin — auth
     AdminLoginView,
     AdminForgotPasswordView,
     AdminVerifyOTPView,
     AdminResetPasswordView,
     AdminProfileView,
-    # Admin — approvals
     AdminRestaurantApproveView,
     AdminRestaurantRejectView,
     AdminBranchApproveView,
     AdminBranchRejectView,
-    # Admin — customers
     AdminCustomerListView,
     AdminCustomerDetailView,
-    # Admin — owners
     AdminOwnerListView,
     AdminOwnerDetailView,
-    # Admin — employees
     AdminEmployeeListView,
     AdminEmployeeDetailView,
-    # Admin — restaurants
     AdminRestaurantListView,
     AdminRestaurantDetailView,
-    # Admin — branches
     AdminBranchListView,
     AdminBranchDetailView,
-    # Shared
     LogoutView,
 )
 
 from apps.restaurants.views import (
-    # Restaurant Categories
     RestaurantCategoryListCreateView,
     RestaurantCategoryDetailView,
     RestaurantSearchView,
@@ -64,7 +49,6 @@ from apps.restaurants.views import (
 )
 
 from apps.food_menus.views import (
-    # Menu Insert View
     MenuCategoryListCreateView,
     MenuCategoryDetailView,
     MenuItemListCreateView,
@@ -78,48 +62,36 @@ from apps.food_menus.views import (
 )
 
 from apps.checkout.views import (
-    # Cars
     CarListCreateView,
     CarDetailView,
-    # Cart
     CartView,
     CartItemView,
-    # Checkout
     CheckoutInitView,
     ConfirmOrderView,
-    # Orders
     OrderListView,
     OrderDetailView,
-    # Customer actions
     MarkArrivedView,
     DeliverManualView,
     OrderQRView,
     FeedbackView,
-    # Employee actions
     ReceiveCashView,
     AcceptOrderView,
     UpdateOrderStatusView,
     CancelOrderView,
     DeliverByQRView,
-    # ETA
     OrderETAView,
 )
 
 from apps.checkout.finance_views import (
-    # Dashboard
     AdminDashboardView,
     OwnerDashboardView,
-    # Wallet
     OwnerWalletView,
-    # Payout
     PayoutRequestView,
     AdminPayoutListView,
     AdminPayoutActionView,
-    # Commission
     AdminCommissionSettingsView,
     AdminCommissionCustomRatesView,
     AdminCommissionTransactionsView,
-    # Support
     SupportTicketView,
     SupportTicketDetailView,
 )
@@ -243,7 +215,10 @@ menu_urlpatterns = [
 restaurant_urlpatterns = [
     # --- Restaurant Categories -------------------------------------------------------
     path("restaurants/categories/", RestaurantCategoryListCreateView.as_view()),
-    path("restaurants/categories/<uuid:category_id>/", RestaurantCategoryDetailView.as_view()),
+    path(
+        "restaurants/categories/<uuid:category_id>/",
+        RestaurantCategoryDetailView.as_view(),
+    ),
     # --- Restaurant Search -----------------------------------------------------------
     path("restaurants/search/", RestaurantSearchView.as_view()),
     # --- Bookmarks -------------------------------------------------------------------

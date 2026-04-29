@@ -195,6 +195,28 @@ def _paginate(request, qs, serializer_class):
     )
 
 
+def _push_new_orders_update(branch_id):
+    """Push pending ORDER_SENT orders count+list to branch WebSocket group."""
+    from asgiref.sync import async_to_sync
+    from channels.layers import get_channel_layer
+    from .serializers import OrderListSerializer
+
+    pending = (
+        Order.objects.filter(branch_id=branch_id, status=Order.Status.ORDER_SENT)
+        .select_related("branch", "branch__restaurant", "car", "payment", "customer")
+        .prefetch_related("items")
+        .order_by("created_at")
+    )
+    payload = {
+        "type": "new_orders_update",
+        "count": pending.count(),
+        "orders": OrderListSerializer(pending, many=True).data,
+    }
+    channel_layer = get_channel_layer()
+    if channel_layer:
+        async_to_sync(channel_layer.group_send)(f"branch_{branch_id}", payload)
+
+
 # --- CAR VIEWS ------------------------------------------------------------------------------------
 
 
@@ -574,11 +596,12 @@ class ConfirmOrderView(APIView):
 
         # ── Payment ─────────────────────────────────────────────────────────
         method = d["payment_method"]
- 
+
         if method == "stripe":
             try:
                 import stripe
                 from django.conf import settings
+
                 stripe.api_key = settings.STRIPE_SECRET_KEY
                 intent = stripe.PaymentIntent.retrieve(d["stripe_intent_id"])
                 if intent["status"] != "succeeded":
@@ -599,9 +622,10 @@ class ConfirmOrderView(APIView):
                     errors={"stripe": [str(exc)]},
                     status_code=502,
                 )
- 
+
         elif method == "wallet":
             from .models import CustomerWallet, CustomerWalletTransaction
+
             wallet, _ = CustomerWallet.objects.get_or_create(customer=request.user)
             if wallet.balance < total:
                 return APIResponse.error(
@@ -623,7 +647,7 @@ class ConfirmOrderView(APIView):
                 status=Payment.Status.PAID,
                 amount=total,
             )
- 
+
         else:  # cash
             payment = Payment.objects.create(
                 method=Payment.Method.CASH,
@@ -665,6 +689,8 @@ class ConfirmOrderView(APIView):
 
         # ── Clear Cart ───────────────────────────────────────────────────────
         cart.delete()
+
+        _push_new_orders_update(branch.id)
 
         return APIResponse.success(
             message="Order placed successfully.",
@@ -756,7 +782,9 @@ class OrderDetailView(APIView):
         if not order:
             return APIResponse.error(message="Order not found.", status_code=404)
 
-        return APIResponse.success(data=OrderSerializer(order).data)
+        return APIResponse.success(
+            data=OrderSerializer(order, context={"request": request}).data
+        )
 
 
 # --- EMPLOYEE — RECEIVE CASH ------------------------------------------------------------------------------------
@@ -865,6 +893,7 @@ class AcceptOrderView(APIView):
         order.save(
             update_fields=["status", "preparing_at", "pickup_time", "updated_at"]
         )
+        _push_new_orders_update(order.branch_id)
 
         return APIResponse.success(
             message="Order accepted. Preparation started.",
@@ -966,6 +995,8 @@ class CancelOrderView(APIView):
             order.note = f"[Cancelled]: {reason}"
         order.save(update_fields=["status", "cancelled_at", "note", "updated_at"])
 
+        _push_new_orders_update(order.branch_id)
+
         return APIResponse.success(message="Order cancelled.")
 
 
@@ -1002,10 +1033,10 @@ class MarkArrivedView(APIView):
                 message="Order not found or already completed.", status_code=404
             )
 
-        if order.user_arrived:
-            return APIResponse.error(
-                message="Arrival already recorded.", status_code=400
-            )
+        # if order.user_arrived:
+        #     return APIResponse.error(
+        #         message="Arrival already recorded.", status_code=400
+        #     )
 
         # Fire Celery task
         mark_user_arrived.delay(
@@ -1095,6 +1126,9 @@ class DeliverByQRView(APIView):
 
     @transaction.atomic
     def post(self, request):
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+
         s = QRScanSerializer(data=request.data)
         if not s.is_valid():
             return APIResponse.error(errors=s.errors, message="Invalid input.")
@@ -1115,8 +1149,24 @@ class DeliverByQRView(APIView):
 
         order.status = Order.Status.DELIVERED
         order.delivered_at = timezone.now()
-        order.qr_token = None  # invalidate token
+        order.qr_token = None
         order.save(update_fields=["status", "delivered_at", "qr_token", "updated_at"])
+
+        # Push to both groups
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            payload = {
+                "type": "order_delivered",
+                "order_id": str(order.id),
+                "order_number": order.order_number,
+                "delivered_at": str(order.delivered_at),
+            }
+            # Notify employee/branch group
+            async_to_sync(channel_layer.group_send)(
+                f"branch_{order.branch_id}", payload
+            )
+            # Notify customer group ← NEW
+            async_to_sync(channel_layer.group_send)(f"order_{order.id}", payload)
 
         return APIResponse.success(
             message="QR scanned. Order delivered!",

@@ -84,6 +84,7 @@ class RestaurantCategorySerializer(serializers.ModelSerializer):
 class RestaurantSerializer(serializers.ModelSerializer):
     bank_detail = RestaurantBankDetailSerializer(read_only=True)
     logo = AbsoluteURLImageField(read_only=True)
+    cover_photo = AbsoluteURLImageField(read_only=True)
     cr_document = AbsoluteURLFileField(read_only=True)
     vat_certificate = AbsoluteURLFileField(read_only=True)
     category = RestaurantCategorySerializer(read_only=True, many=False)
@@ -96,6 +97,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
             "legal_name",
             "category",
             "logo",
+            "cover_photo",
             "short_description",
             "cr_number",
             "vat_number",
@@ -257,6 +259,9 @@ class BranchSearchSerializer(serializers.ModelSerializer):
         source="restaurant.category.icon", read_only=True
     )
     logo = AbsoluteURLImageField(source="restaurant.logo", read_only=True)
+    cover_photo = AbsoluteURLImageField(
+        source="restaurant.cover_photo", read_only=True
+    )  # ← NEW
     distance_km = serializers.SerializerMethodField()
 
     class Meta:
@@ -275,6 +280,7 @@ class BranchSearchSerializer(serializers.ModelSerializer):
             "category_name",
             "category_icon",
             "logo",
+            "cover_photo",  # ← NEW
             "distance_km",
         ]
 

@@ -124,7 +124,9 @@ class ConfirmOrderSerializer(serializers.Serializer):
     """
 
     branch_id = serializers.UUIDField()
-    payment_method = serializers.ChoiceField(choices=[("stripe","Stripe"),("cash","Cash"),("wallet","Wallet")])
+    payment_method = serializers.ChoiceField(
+        choices=[("stripe", "Stripe"), ("cash", "Cash"), ("wallet", "Wallet")]
+    )
     # Required for Stripe flow — the intent id returned from Step 1
     stripe_intent_id = serializers.CharField(required=False, allow_blank=True)
     note = serializers.CharField(required=False, allow_blank=True, default="")
@@ -212,6 +214,18 @@ class OrderSerializer(serializers.ModelSerializer):
     restaurant_name = serializers.CharField(
         source="branch.restaurant.brand_name", read_only=True
     )
+    category_name = serializers.CharField(
+        source="branch.restaurant.category.name", read_only=True
+    )
+    category_icon = serializers.SerializerMethodField()
+    branch_logo = serializers.SerializerMethodField()
+    branch_latitude = serializers.DecimalField(
+        source="branch.latitude", max_digits=9, decimal_places=6, read_only=True
+    ) 
+    branch_longitude = serializers.DecimalField(
+        source="branch.longitude", max_digits=9, decimal_places=6, read_only=True
+    ) 
+    distance_km = serializers.SerializerMethodField()
     status_timestamps = serializers.SerializerMethodField()
 
     class Meta:
@@ -230,12 +244,65 @@ class OrderSerializer(serializers.ModelSerializer):
             "user_arrived_at",
             "branch_name",
             "restaurant_name",
+            "category_name",
+            "category_icon",
+            "branch_logo",
+            "branch_latitude",
+            "branch_longitude",
+            "distance_km",
             "car",
             "payment",
             "items",
             "status_timestamps",
             "created_at",
         ]
+
+    def get_branch_logo(self, obj):
+        import os
+        from django.conf import settings as django_settings
+
+        if not obj.branch or not obj.branch.restaurant.logo:
+            return None
+        logo = obj.branch.restaurant.logo
+        try:
+            url = logo.url
+        except Exception:
+            return None
+        base = os.getenv("BASE_URL", getattr(django_settings, "BASE_URL", "")).rstrip(
+            "/"
+        )
+        return (
+            f"{base}/{url.lstrip('/')}" if base and not url.startswith("http") else url
+        )
+
+    def get_distance_km(self, obj):
+        request = self.context.get("request")
+        if not request or not obj.branch:
+            return None
+        try:
+            user_lat = float(request.query_params.get("user_lat"))
+            user_lon = float(request.query_params.get("user_lon"))
+        except (TypeError, ValueError):
+            return None
+        if not obj.branch.latitude or not obj.branch.longitude:
+            return None
+        import math
+
+        R = 6371.0
+        lat1, lon1, lat2, lon2 = map(
+            math.radians,
+            [
+                user_lat,
+                user_lon,
+                float(obj.branch.latitude),
+                float(obj.branch.longitude),
+            ],
+        )
+        a = (
+            math.sin((lat2 - lat1) / 2) ** 2
+            + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+        )
+        return round(R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)), 2)
 
     def get_status_timestamps(self, obj):
         return {
@@ -244,8 +311,23 @@ class OrderSerializer(serializers.ModelSerializer):
             "delivered_at": obj.delivered_at,
             "cancelled_at": obj.cancelled_at,
         }
-
-
+    
+    def get_category_icon(self, obj):
+        from apps.utils.custom_fields import AbsoluteURLImageField
+        import os
+        from django.conf import settings as ds
+        if not obj.branch or not obj.branch.restaurant.category:
+            return None
+        icon = obj.branch.restaurant.category.icon
+        if not icon:
+            return None
+        try:
+            url = icon.url
+        except Exception:
+            return None
+        base = os.getenv("BASE_URL", getattr(ds, "BASE_URL", "")).rstrip("/")
+        return f"{base}/{url.lstrip('/')}" if base and not url.startswith("http") else url
+  
 # --- ORDER  (list — lightweight) --------------------------------------------------------------------------------------
 
 

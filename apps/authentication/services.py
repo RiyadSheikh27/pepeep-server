@@ -287,6 +287,7 @@ class OwnerAuthService:
             "legal_name": data["legal_name"],
             "brand_name": data["brand_name"],
             "logo": data.get("logo"),
+            "cover_photo": data.get("cover_photo"),
             "short_description": data.get("short_description", ""),
             "cr_number": data["cr_number"],
             "vat_number": data["vat_number"],

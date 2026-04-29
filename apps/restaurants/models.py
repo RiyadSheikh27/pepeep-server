@@ -47,6 +47,7 @@ class Restaurant(TimeStampedModel):
     logo = models.ImageField(
         upload_to="restaurants/logos/%Y/%m/", null=True, blank=True
     )
+    cover_photo = models.ImageField(upload_to="restaurants/covers/%Y/%m/", null=True, blank=True)
     short_description = models.TextField(blank=True, default="")
 
     # Legal
